@@ -102,6 +102,8 @@ export interface YouTubeSync {
   volume: number;
   muted: boolean;
   hasVideo: boolean;
+  currentVideoId?: string;
+  endedVideoId?: string;
   loadVideo: (videoId: string) => void;
   play: () => void;
   pause: () => void;
@@ -139,6 +141,7 @@ export function useYouTubeSync({
   const [buffering, setBuffering] = useState(false);
   const [volume, setVolumeState] = useState(70);
   const [muted, setMuted] = useState(false);
+  const [endedVideoId, setEndedVideoId] = useState<string | undefined>(undefined);
 
   // ---- Player lifecycle ----
   useEffect(() => {
@@ -174,7 +177,10 @@ export function useYouTubeSync({
               if (s === 0) {
                 setPlaying(false);
                 const finished = playerRef.current?.getVideoData?.()?.video_id;
-                if (finished) onEndedRef.current(finished);
+                if (finished) {
+                  onEndedRef.current(finished);
+                  setEndedVideoId(finished);
+                }
               }
             },
           },
@@ -216,6 +222,7 @@ export function useYouTubeSync({
     try {
       const currentId = player.getVideoData?.()?.video_id;
       if (currentId !== state.currentVideoId) {
+        setEndedVideoId(undefined);
         if (state.isPlaying) {
           player.loadVideoById({ videoId: state.currentVideoId, startSeconds: target });
         } else {
@@ -354,6 +361,8 @@ export function useYouTubeSync({
     volume,
     muted,
     hasVideo: Boolean(state?.currentVideoId),
+    currentVideoId: state?.currentVideoId,
+    endedVideoId,
     loadVideo,
     play,
     pause,

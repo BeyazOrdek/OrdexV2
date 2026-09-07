@@ -117,8 +117,8 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
           size="icon"
           variant="ghost"
           className="size-8 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-          title="Odalar"
-          onClick={() => navigate("/rooms")}
+          title="Oda merkezi"
+          onClick={() => navigate("/dashboard")}
         >
           <Users className="size-4" />
         </Button>

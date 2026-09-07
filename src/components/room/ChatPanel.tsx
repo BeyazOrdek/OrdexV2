@@ -1,7 +1,7 @@
 import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import { avatarHue, initials } from "@/lib/utils-room";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { Image as ImageIcon, Loader2, Search, Send, SmilePlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
 
   const sendMessage = useMutation(api.chat.sendMessage);
   const toggleReaction = useMutation(api.chat.toggleReaction);
-  const searchGifs = useMutation(api.tenor.searchGifs);
+  const searchGifs = useAction(api.tenor.searchGifs);
 
   const [text, setText] = useState("");
   const [showGifs, setShowGifs] = useState(false);

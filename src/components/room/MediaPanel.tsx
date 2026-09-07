@@ -65,9 +65,9 @@ export function MediaPanel({
       {/* Player area */}
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black">
         <div className="relative aspect-video max-h-full w-full max-w-full">
-          {sync.hasVideo ? (
-            <div ref={sync.containerRef} className="absolute inset-0 size-full" />
-          ) : (
+          {/* Always mounted: the YT API replaces this node with the iframe on init. */}
+          <div ref={sync.containerRef} className="absolute inset-0 size-full [&_iframe]:size-full" />
+          {!sync.hasVideo && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
               <span className="flex size-14 items-center justify-center rounded-2xl bg-red-600/15 text-red-500">
                 <MonitorPlay className="size-7" />
@@ -78,12 +78,12 @@ export function MediaPanel({
               </p>
             </div>
           )}
+        </div>
           {sync.hasVideo && !sync.ready && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/60">
               <Loader2 className="size-6 animate-spin text-zinc-500" />
             </div>
           )}
-        </div>
 
         {/* Local camera preview (self view) */}
         {localStream && camOn && (

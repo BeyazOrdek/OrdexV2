@@ -35,6 +35,8 @@ export interface UseVoiceOptions {
   sessionId: string;
   /** Presence rows currently in voice — drives mesh topology. */
   voiceSessions: VoiceSessionInfo[];
+  /** Optional callback so parents can mirror voice state (e.g. for presence heartbeats). */
+  onVoiceStateChange?: (state: { inVoice: boolean; micOn: boolean; camOn: boolean }) => void;
 }
 
 export interface VoiceApi {
@@ -56,7 +58,12 @@ function isPolite(self: string, other: string) {
   return self < other;
 }
 
-export function useVoice({ roomId, sessionId, voiceSessions }: UseVoiceOptions): VoiceApi {
+export function useVoice({
+  roomId,
+  sessionId,
+  voiceSessions,
+  onVoiceStateChange,
+}: UseVoiceOptions): VoiceApi {
   const sendSignal = useMutation(api.rtc.sendSignal);
   const deleteSignal = useMutation(api.rtc.deleteSignal);
   const signals = useQuery(api.rtc.listSignals, { sessionId });
@@ -77,6 +84,13 @@ export function useVoice({ roomId, sessionId, voiceSessions }: UseVoiceOptions):
   const camOnRef = useRef(true);
   const inVoiceRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Mirror voice state up to the parent without re-triggering effects.
+  const onVoiceStateChangeRef = useRef(onVoiceStateChange);
+  onVoiceStateChangeRef.current = onVoiceStateChange;
+  useEffect(() => {
+    onVoiceStateChangeRef.current?.({ inVoice, micOn, camOn });
+  }, [inVoice, micOn, camOn]);
 
   const setTrackEnabled = useCallback((kind: "audio" | "video", enabled: boolean) => {
     // Stream keeps running; we only flip track.enabled (spec: no stop/reopen).
