@@ -12,6 +12,7 @@ interface YTPlayer {
   getCurrentTime(): number;
   getDuration(): number;
   getPlayerState(): number;
+  getVideoData(): { video_id: string; title: string };
   loadVideoById(opts: { videoId: string; startSeconds?: number }): void;
   cueVideoById(opts: { videoId: string; startSeconds?: number }): void;
   setVolume(volume: number): void;
@@ -92,7 +93,7 @@ export interface UseYouTubeSyncOptions {
 }
 
 export interface YouTubeSync {
-  playerRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
   ready: boolean;
   playing: boolean;
   currentTime: number;
@@ -344,7 +345,7 @@ export function useYouTubeSync({
   }, [muted, volume]);
 
   return {
-    playerRef,
+    containerRef: hostRef,
     ready,
     playing,
     currentTime,
