@@ -173,6 +173,17 @@ export const stopMedia = mutation({
 
 // ---------- Queue ----------
 
+export const listQueue = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("queueItems")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+      .order("asc")
+      .take(100);
+  },
+});
+
 export const addToQueue = mutation({
   args: {
     roomId: v.id("rooms"),
