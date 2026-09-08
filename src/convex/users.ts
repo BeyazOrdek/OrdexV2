@@ -50,7 +50,7 @@ export const getUserInfo = query({
   },
 });
 
-/** Search users by exact or prefix name match (min 2 chars), for the add-friend flow. */
+/** Search users by name (substring match, min 2 chars) for the add-friend flow. */
 export const searchUsers = query({
   args: { name: v.string() },
   handler: async (ctx, args) => {
@@ -63,8 +63,9 @@ export const searchUsers = query({
       .filter(
         (u) =>
           u._id !== meId &&
-          (u.name ?? "").toLowerCase().startsWith(q),
+          (u.name ?? "").toLowerCase().includes(q),
       )
+      .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
       .slice(0, 10)
       .map((u) => ({
         _id: u._id,

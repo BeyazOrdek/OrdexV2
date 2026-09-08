@@ -21,6 +21,10 @@ interface YTPlayer {
   mute(): void;
   unMute(): void;
   destroy(): void;
+  // Quality / captions controls — optional because not every API build exposes them.
+  setPlaybackQuality?(quality: string): void;
+  unloadModule?(moduleName: string): void;
+  setOption?(moduleName: string, key: string, value: unknown): void;
 }
 
 interface YTNamespace {
@@ -32,6 +36,7 @@ interface YTNamespace {
       events?: {
         onReady?: () => void;
         onStateChange?: (event: { data: number }) => void;
+        onApiChange?: () => void;
       };
     },
   ) => YTPlayer;
@@ -124,6 +129,29 @@ export interface MediaSync {
 const SYNC_BIAS_MS = 150; // clock/latency compensation toward the controller's position
 const HARD_RESYNC_MS = 4000; // drift beyond this triggers a seek
 
+/**
+ * Force captions off (auto subs like "[Müzik]") and push the player to its
+ * highest available quality. Every call is guarded: these APIs are missing in
+ * some player builds and must never throw inside an event handler.
+ */
+function killCaptionsAndBoostQuality(player: YTPlayer) {
+  try {
+    player.unloadModule?.("captions");
+  } catch {
+    /* captions module not loaded */
+  }
+  try {
+    player.setOption?.("captions", "track", {});
+  } catch {
+    /* captions module not loaded */
+  }
+  try {
+    player.setPlaybackQuality?.("highres");
+  } catch {
+    /* quality control unsupported */
+  }
+}
+
 /** Try to play; if autoplay is blocked, retry on the next user gesture. */
 function playWithAutoplayGuard(el: HTMLMediaElement) {
   el.play().catch((err: unknown) => {
@@ -214,8 +242,17 @@ export function useMediaSync({
     let player: YTPlayer | null = null;
     loadYouTubeApi()
       .then((YT) => {
-        if (cancelled || !hostRef.current) return;
-        player = new YT.Player(hostRef.current, {
+        const host = hostRef.current;
+        if (cancelled || !host) return;
+        // NEVER hand a React-managed node to the YT API: it *replaces* that
+        // node with the iframe, which corrupts React's virtual DOM and makes
+        // the next commit crash with "insertBefore ... not a child of this
+        // node". Instead we create a disposable inner node that React knows
+        // nothing about; the React-owned wrapper stays mounted forever.
+        const mount = document.createElement("div");
+        mount.className = "size-full";
+        host.appendChild(mount);
+        player = new YT.Player(mount, {
           videoId: "",
           playerVars: {
             autoplay: 0,
@@ -226,8 +263,10 @@ export function useMediaSync({
             playsinline: 1,
             // Auto-captions (e.g. the "[Müzik]" auto subs) must NEVER appear.
             cc_load_policy: 0,
-            cc_lang_pref: "tr",
+            cc_lang_pref: "off",
             iv_load_policy: 3, // no video annotations
+            // Ask for the highest stream up front (legacy param, harmless).
+            vq: "highres",
             hl: "tr",
             origin: window.location.origin,
           },
@@ -236,13 +275,23 @@ export function useMediaSync({
               if (cancelled || !player) return;
               ytReadyRef.current = true;
               player.setVolume(volume);
+              killCaptionsAndBoostQuality(player);
               setYtReady(true);
+            },
+            onApiChange: () => {
+              // Captions modules load lazily per video — kill them again.
+              if (cancelled || !player) return;
+              killCaptionsAndBoostQuality(player);
             },
             onStateChange: (event) => {
               if (cancelled) return;
               const s = event.data;
               setBuffering(s === 3);
-              if (s === 1) setPlaying(true);
+              if (s === 1) {
+                setPlaying(true);
+                // Playing is the moment YouTube decides on quality + subs.
+                killCaptionsAndBoostQuality(player);
+              }
               if (s === 2) setPlaying(false);
               if (s === 0) {
                 setPlaying(false);
@@ -262,6 +311,7 @@ export function useMediaSync({
     return () => {
       cancelled = true;
       // Full teardown: destroy the player and clean the DOM so audio stops.
+      // try/catch wrapper — destroy() throws if the iframe is already gone.
       try {
         playerRef.current?.destroy();
       } catch {
@@ -269,7 +319,13 @@ export function useMediaSync({
       }
       playerRef.current = null;
       ytReadyRef.current = false;
-      if (hostRef.current) hostRef.current.innerHTML = "";
+      // Remove leftover YT nodes without touching the React-owned wrapper
+      // itself (never remove/replace the wrapper node React is tracking).
+      try {
+        hostRef.current?.replaceChildren();
+      } catch {
+        /* wrapper already gone */
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -305,11 +361,14 @@ export function useMediaSync({
       if (currentId !== state.currentVideoId) {
         setEndedMediaKey(undefined);
         endedFiredRef.current = "";
+        // Media switch without destroying the player: load/cue into the
+        // existing iframe (keeps React DOM stable, no node replacement).
         if (state.isPlaying) {
           player.loadVideoById({ videoId: state.currentVideoId, startSeconds: target });
         } else {
           player.cueVideoById({ videoId: state.currentVideoId, startSeconds: target });
         }
+        killCaptionsAndBoostQuality(player);
       } else {
         const now = player.getCurrentTime();
         const drift = Math.abs(now - target);

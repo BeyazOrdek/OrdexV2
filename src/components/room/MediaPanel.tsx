@@ -110,7 +110,9 @@ export function MediaPanel({
         className="ordex-fs-stage relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black"
       >
         <div className="relative aspect-video max-h-full w-full max-w-full">
-          {/* YouTube host — always mounted; the YT API replaces this node with the iframe on init. */}
+          {/* YouTube host — always mounted. The YT API mounts its iframe inside
+              a disposable inner div created by use-media-sync; React never
+              owns the swapped node, so the virtual DOM stays consistent. */}
           <div
             ref={sync.containerRef}
             className={cn("absolute inset-0 size-full [&_iframe]:size-full", isDirect && "invisible")}
