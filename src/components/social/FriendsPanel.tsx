@@ -2,9 +2,12 @@ import { api } from "@/convex/_generated/api";
 import { useMutation, useQuery, useAction } from "convex/react";
 import {
   ArrowLeft,
+  BadgeCheck,
   Check,
+  CircleDot,
   Image as ImageIcon,
   Loader2,
+  MessageSquare,
   Search,
   Send,
   UserMinus,
@@ -49,23 +52,46 @@ export function FriendsPanel() {
   const friends = (useQuery(api.social.listFriends, {}) ?? []) as PublicUserLite[];
   const incoming = (useQuery(api.social.listIncomingRequests, {}) ?? []) as PublicUserLite[];
   const outgoing = (useQuery(api.social.listOutgoingRequests, {}) ?? []) as PublicUserLite[];
+  const dmContacts = (useQuery(api.social.listDmContacts, {}) ?? []) as (PublicUserLite & { lastAt: number })[];
 
   const sendRequest = useMutation(api.social.sendFriendRequest);
   const acceptRequest = useMutation(api.social.acceptFriendRequest);
   const removeFriend = useMutation(api.social.removeFriend);
 
   const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<PublicUserLite[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [dmWith, setDmWith] = useState<PublicUserLite | null>(null);
 
-  const addByName = async () => {
-    const clean = search.trim();
-    if (!clean) return;
+  const searchUsers = useQuery(
+    api.users.searchUsers,
+    search.trim().length >= 2 ? { name: search.trim() } : "skip",
+  );
+
+  // Live user search: reflect Convex query results with a tiny loading flag.
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    if (searchUsers === undefined) return; // query still loading
+    setSearchResults(searchUsers as PublicUserLite[]);
+    setSearching(false);
+  }, [search, searchUsers]);
+
+  const friendIds = new Set(friends.map((f) => f._id));
+  const incomingIds = new Set(incoming.map((u) => u._id));
+  const outgoingIds = new Set(outgoing.map((u) => u._id));
+
+  const addById = async (u: PublicUserLite) => {
     setMessage(null);
     try {
-      await sendRequest({ name: clean });
-      setMessage(`"${clean}" kullanıcısına istek gönderildi.`);
-      setSearch("");
+      await sendRequest({ userId: u._id as never });
+      setMessage(`"${u.name}" kullanıcısına istek gönderildi.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "İstek gönderilemedi.");
     }
@@ -77,37 +103,104 @@ export function FriendsPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Add friend */}
+      {/* Add friend: live search by username */}
       <div className="border-b border-white/5 p-3">
-        <div className="flex gap-2">
-          <div className="relative min-w-0 flex-1">
-            <Search className="absolute left-2.5 top-2.5 size-3.5 text-zinc-600" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void addByName()}
-              placeholder="Kullanıcı adıyla arkadaş ekle..."
-              className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600"
-            />
-          </div>
-          <Button
-            size="sm"
-            onClick={() => void addByName()}
-            disabled={!search.trim()}
-            className="h-9 shrink-0 gap-1 bg-[var(--ordex-accent)] px-3 text-xs text-white hover:bg-[var(--ordex-accent-hover)]"
-          >
-            <UserPlus className="size-3.5" /> Ekle
-          </Button>
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 size-3.5 text-zinc-600" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Kullanıcı ara ve arkadaş ekle..."
+            className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600"
+          />
         </div>
         {message && <p className="mt-1.5 text-[11px] text-zinc-400">{message}</p>}
+
+        {/* Search results */}
+        {search.trim().length >= 2 && (
+          <div className="mt-2 max-h-40 space-y-1 overflow-y-auto [scrollbar-width:thin]">
+            {searching && (
+              <div className="flex items-center gap-2 px-1 py-1 text-[11px] text-zinc-500">
+                <Loader2 className="size-3.5 animate-spin" /> Aranıyor...
+              </div>
+            )}
+            {!searching && searchResults && searchResults.length === 0 && (
+              <p className="px-1 py-1 text-[11px] text-zinc-600">Kullanıcı bulunamadı.</p>
+            )}
+            {!searching &&
+              searchResults?.map((u) => (
+                <div
+                  key={u._id}
+                  className="flex items-center gap-2 rounded-md bg-black/20 px-2 py-1.5"
+                >
+                  <UserAvatar user={u} size={7} />
+                  <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">
+                    {u.name}
+                  </span>
+                  {friendIds.has(u._id) ? (
+                    <span className="flex shrink-0 items-center gap-1 text-[10px] text-emerald-400">
+                      <BadgeCheck className="size-3.5" /> Arkadaş
+                    </span>
+                  ) : incomingIds.has(u._id) ? (
+                    <span className="shrink-0 text-[10px] text-amber-400">sana istek attı</span>
+                  ) : outgoingIds.has(u._id) ? (
+                    <span className="shrink-0 text-[10px] text-zinc-500">bekliyor…</span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      className="h-7 shrink-0 gap-1 bg-[var(--ordex-accent)] px-2 text-[11px] text-white hover:bg-[var(--ordex-accent-hover)]"
+                      onClick={() => void addById(u)}
+                    >
+                      <UserPlus className="size-3" /> Ekle
+                    </Button>
+                  )}
+                </div>
+              ))}
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
+        {/* DM contacts */}
+        {dmContacts.length > 0 && (
+          <>
+            <p className="flex items-center gap-1.5 px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              <MessageSquare className="size-3" /> Mesajlar ({dmContacts.length})
+            </p>
+            {dmContacts.map((u) => (
+              <button
+                key={u._id}
+                onClick={() => setDmWith(u)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-white/5"
+              >
+                <UserAvatar user={u} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs text-zinc-200">{u.name}</span>
+                  {u.statusMessage && (
+                    <span className="block truncate text-[10px] text-zinc-600">
+                      {u.statusMessage}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-[10px] text-zinc-600">
+                  {new Date(u.lastAt).toLocaleDateString("tr-TR", {
+                    day: "numeric",
+                    month: "short",
+                  })}
+                </span>
+              </button>
+            ))}
+          </>
+        )}
+
         {/* Incoming requests */}
         {incoming.length > 0 && (
           <>
-            <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-              Gelen istekler ({incoming.length})
+            <p className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+              Gelen istekler
+              <span className="rounded-full bg-[var(--ordex-accent)] px-1.5 text-[9px] font-bold text-white">
+                {incoming.length}
+              </span>
             </p>
             {incoming.map((u) => (
               <div key={u._id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5">
@@ -162,12 +255,12 @@ export function FriendsPanel() {
         )}
 
         {/* Friends */}
-        <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-          Arkadaşlar ({friends.length})
+        <p className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+          <CircleDot className="size-3" /> Arkadaşlar ({friends.length})
         </p>
-        {friends.length === 0 && incoming.length === 0 && outgoing.length === 0 && (
+        {friends.length === 0 && (
           <p className="px-2 py-1 text-xs text-zinc-600">
-            Henüz arkadaşın yok. Yukarıdan kullanıcı adı ile istek gönder.
+            Henüz arkadaşın yok. Yukarıdan kullanıcı adı ile ara ve istek gönder.
           </p>
         )}
         {friends.map((u) => (
@@ -191,10 +284,10 @@ export function FriendsPanel() {
             <Button
               size="sm"
               variant="secondary"
-              className="h-7 shrink-0 bg-white/10 px-2 text-[11px] text-zinc-100 hover:bg-white/15"
+              className="h-7 shrink-0 gap-1 bg-white/10 px-2 text-[11px] text-zinc-100 hover:bg-white/15"
               onClick={() => setDmWith(u)}
             >
-              DM
+              <MessageSquare className="size-3" /> DM
             </Button>
           </div>
         ))}

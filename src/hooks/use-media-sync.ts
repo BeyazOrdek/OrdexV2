@@ -280,8 +280,9 @@ export function useMediaSync({
             },
             onApiChange: () => {
               // Captions modules load lazily per video — kill them again.
-              if (cancelled || !player) return;
-              killCaptionsAndBoostQuality(player);
+              const p = playerRef.current;
+              if (cancelled || !p) return;
+              killCaptionsAndBoostQuality(p);
             },
             onStateChange: (event) => {
               if (cancelled) return;
@@ -290,7 +291,8 @@ export function useMediaSync({
               if (s === 1) {
                 setPlaying(true);
                 // Playing is the moment YouTube decides on quality + subs.
-                killCaptionsAndBoostQuality(player);
+                const p = playerRef.current;
+                if (p) killCaptionsAndBoostQuality(p);
               }
               if (s === 2) setPlaying(false);
               if (s === 0) {
