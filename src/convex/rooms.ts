@@ -2,6 +2,8 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+const mediaTypeValidator = v.union(v.literal("youtube"), v.literal("direct"));
+
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function generateRoomCode(): string {
@@ -127,6 +129,8 @@ export const getMedia = query({
     if (!room) return null;
     return {
       currentVideoId: room.currentVideoId,
+      mediaType: room.mediaType ?? "youtube",
+      mediaUrl: room.mediaUrl,
       isPlaying: room.isPlaying,
       positionSec: room.positionSec,
       mediaUpdatedAt: room.mediaUpdatedAt,
@@ -139,6 +143,8 @@ export const setMedia = mutation({
   args: {
     roomId: v.id("rooms"),
     videoId: v.string(),
+    mediaType: v.optional(mediaTypeValidator),
+    mediaUrl: v.optional(v.string()),
     isPlaying: v.boolean(),
     positionSec: v.number(),
     sessionId: v.string(),
@@ -149,6 +155,8 @@ export const setMedia = mutation({
     if (!room) throw new Error("Oda bulunamadı.");
     await ctx.db.patch(args.roomId, {
       currentVideoId: args.videoId,
+      mediaType: args.mediaType ?? "youtube",
+      mediaUrl: args.mediaUrl,
       isPlaying: args.isPlaying,
       positionSec: Math.max(0, args.positionSec),
       mediaUpdatedAt: Date.now(),
@@ -163,6 +171,8 @@ export const stopMedia = mutation({
     await requireUser(ctx);
     await ctx.db.patch(args.roomId, {
       currentVideoId: undefined,
+      mediaType: undefined,
+      mediaUrl: undefined,
       isPlaying: false,
       positionSec: 0,
       mediaUpdatedAt: Date.now(),
@@ -188,6 +198,8 @@ export const addToQueue = mutation({
   args: {
     roomId: v.id("rooms"),
     videoId: v.string(),
+    mediaType: v.optional(mediaTypeValidator),
+    mediaUrl: v.optional(v.string()),
     title: v.string(),
     thumb: v.optional(v.string()),
   },
@@ -197,6 +209,8 @@ export const addToQueue = mutation({
     const itemId = await ctx.db.insert("queueItems", {
       roomId: args.roomId,
       videoId: args.videoId,
+      mediaType: args.mediaType ?? "youtube",
+      mediaUrl: args.mediaUrl,
       title: args.title.slice(0, 140),
       thumb: args.thumb,
       addedByName: user?.name ?? "Misafir",
@@ -208,6 +222,8 @@ export const addToQueue = mutation({
     if (room && !room.currentVideoId) {
       await ctx.db.patch(args.roomId, {
         currentVideoId: args.videoId,
+        mediaType: args.mediaType ?? "youtube",
+        mediaUrl: args.mediaUrl,
         isPlaying: true,
         positionSec: 0,
         mediaUpdatedAt: Date.now(),
@@ -235,6 +251,8 @@ export const playQueueItem = mutation({
     if (!item) return;
     await ctx.db.patch(item.roomId, {
       currentVideoId: item.videoId,
+      mediaType: item.mediaType ?? "youtube",
+      mediaUrl: item.mediaUrl,
       isPlaying: true,
       positionSec: 0,
       mediaUpdatedAt: Date.now(),
@@ -260,6 +278,8 @@ export const advanceQueue = mutation({
     if (next) {
       await ctx.db.patch(args.roomId, {
         currentVideoId: next.videoId,
+        mediaType: next.mediaType ?? "youtube",
+        mediaUrl: next.mediaUrl,
         isPlaying: true,
         positionSec: 0,
         mediaUpdatedAt: Date.now(),

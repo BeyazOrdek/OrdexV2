@@ -40,8 +40,11 @@ const schema = defineSchema(
       createdByUserId: v.id("users"),
       createdByName: v.string(),
       createdAt: v.number(),
-      // synchronized YouTube playback state
+      // synchronized playback state (YouTube IFrame or direct HTML5 video)
+      // currentVideoId is the media key: YouTube video id, or the full URL for direct files
       currentVideoId: v.optional(v.string()),
+      mediaType: v.optional(v.union(v.literal("youtube"), v.literal("direct"))),
+      mediaUrl: v.optional(v.string()), // direct playback URL (mp4/webm/tau-video)
       isPlaying: v.boolean(),
       positionSec: v.number(),
       mediaUpdatedAt: v.number(),
@@ -102,7 +105,10 @@ const schema = defineSchema(
 
     queueItems: defineTable({
       roomId: v.id("rooms"),
+      // media key: YouTube video id, or the full URL for direct files
       videoId: v.string(),
+      mediaType: v.optional(v.union(v.literal("youtube"), v.literal("direct"))),
+      mediaUrl: v.optional(v.string()),
       title: v.string(),
       thumb: v.optional(v.string()),
       addedByName: v.string(),

@@ -4,17 +4,21 @@ import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const ICE_SERVERS: RTCIceServer[] = [
-  { urls: ["stun:stun.l.google.com:19302"] },
-  { urls: ["stun:stun1.l.google.com:19302"] },
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
 ];
 
 interface Peer {
   sessionId: string;
   pc: RTCPeerConnection;
-  audioEl: HTMLAudioElement;
+  audioEl: HTMLAudioElement | null;
   polite: boolean;
   makingOffer: boolean;
   ignoringOffer: boolean;
+  /** ICE candidates that arrived before setRemoteDescription completed. */
+  candidateQueue: RTCIceCandidateInit[];
+  /** True once setRemoteDescription succeeded — queued candidates flushed. */
+  remoteDescriptionSet: boolean;
 }
 
 export interface VoiceSessionInfo {
@@ -35,7 +39,7 @@ export interface UseVoiceOptions {
   sessionId: string;
   /** Presence rows currently in voice — drives mesh topology. */
   voiceSessions: VoiceSessionInfo[];
-  /** Optional callback so parents can mirror voice state (e.g. for presence heartbeats). */
+  /** Optional callback so parents can mirror voice state (e.g. presence heartbeats). */
   onVoiceStateChange?: (state: { inVoice: boolean; micOn: boolean; camOn: boolean }) => void;
 }
 
@@ -70,7 +74,7 @@ export function useVoice({
 
   const [inVoice, setInVoice] = useState(false);
   const [micOn, setMicOn] = useState(true);
-  const [camOn, setCamOn] = useState(true);
+  const [camOn, setCamOn] = useState(false); // camera is lazy: only on explicit user action
   const [error, setError] = useState<string | null>(null);
   const [speakingSet, setSpeakingSet] = useState<Set<string>>(() => new Set());
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -81,9 +85,10 @@ export function useVoice({
   const peersRef = useRef<Map<string, Peer>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const micOnRef = useRef(true);
-  const camOnRef = useRef(true);
+  const camOnRef = useRef(false);
   const inVoiceRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const cameraAcquiringRef = useRef(false);
 
   // Mirror voice state up to the parent without re-triggering effects.
   const onVoiceStateChangeRef = useRef(onVoiceStateChange);
@@ -93,7 +98,7 @@ export function useVoice({
   }, [inVoice, micOn, camOn]);
 
   const setTrackEnabled = useCallback((kind: "audio" | "video", enabled: boolean) => {
-    // Stream keeps running; we only flip track.enabled (spec: no stop/reopen).
+    // Stream keeps running; we only flip track.enabled (no stop/reopen).
     const stream = localStreamRef.current;
     if (!stream) return;
     for (const track of stream.getTracks()) {
@@ -103,6 +108,7 @@ export function useVoice({
 
   const attachSpeakingMonitor = useCallback((stream: MediaStream) => {
     if (stream.getAudioTracks().length === 0) return;
+    if (audioCtxRef.current) return;
     try {
       const Ctx =
         window.AudioContext ??
@@ -136,20 +142,33 @@ export function useVoice({
     }
   }, [sessionId]);
 
+  /** Try to play; if autoplay is blocked, retry on the next user gesture. */
+  const playWithAutoplayGuard = useCallback((audioEl: HTMLAudioElement) => {
+    audioEl.play().catch((err: unknown) => {
+      console.log("Autoplay bekleniyor:", err);
+      const resume = () => {
+        void audioEl.play().catch(() => undefined);
+        window.removeEventListener("pointerdown", resume);
+        window.removeEventListener("keydown", resume);
+      };
+      window.addEventListener("pointerdown", resume);
+      window.addEventListener("keydown", resume);
+    });
+  }, []);
+
   const createPeer = useCallback(
     (remoteSession: string): Peer => {
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-      const audioEl = document.createElement("audio");
-      audioEl.autoplay = true;
-      document.body.appendChild(audioEl);
 
       const peer: Peer = {
         sessionId: remoteSession,
         pc,
-        audioEl,
+        audioEl: null, // created in ontrack when the remote stream actually arrives
         polite: isPolite(sessionId, remoteSession),
         makingOffer: false,
         ignoringOffer: false,
+        candidateQueue: [],
+        remoteDescriptionSet: false,
       };
 
       const stream = localStreamRef.current;
@@ -172,23 +191,27 @@ export function useVoice({
       };
 
       pc.ontrack = (event) => {
-        const [remoteStream] = event.streams;
-        if (remoteStream && audioEl.srcObject !== remoteStream) {
-          audioEl.srcObject = remoteStream;
+        // Build a dedicated <audio autoplay> element for the remote stream.
+        let audioEl = peer.audioEl;
+        if (!audioEl) {
+          audioEl = document.createElement("audio");
+          audioEl.autoplay = true;
+          audioEl.dataset.peer = remoteSession;
+          document.body.appendChild(audioEl);
+          peer.audioEl = audioEl;
         }
-        setRemoteStreams((prev) => {
-          const next = new Map(prev);
-          next.set(remoteSession, remoteStream);
-          return next;
-        });
-        // Autoplay guard: retry on the next user gesture if blocked.
-        audioEl.play().catch(() => {
-          const resume = () => {
-            void audioEl.play().catch(() => undefined);
-            window.removeEventListener("pointerdown", resume);
-          };
-          window.addEventListener("pointerdown", resume);
-        });
+        const [remoteStream] = event.streams;
+        if (remoteStream) {
+          if (audioEl.srcObject !== remoteStream) {
+            audioEl.srcObject = remoteStream;
+            setRemoteStreams((prev) => {
+              const next = new Map(prev);
+              next.set(remoteSession, remoteStream);
+              return next;
+            });
+          }
+          playWithAutoplayGuard(audioEl);
+        }
       };
 
       pc.onconnectionstatechange = () => {
@@ -224,8 +247,20 @@ export function useVoice({
 
       return peer;
     },
-    [roomId, sendSignal, sessionId],
+    [roomId, sendSignal, sessionId, playWithAutoplayGuard],
   );
+
+  /** Flush ICE candidates queued while setRemoteDescription was pending. */
+  const drainCandidateQueue = useCallback(async (peer: Peer) => {
+    const queued = peer.candidateQueue.splice(0, peer.candidateQueue.length);
+    for (const candidate of queued) {
+      try {
+        await peer.pc.addIceCandidate(candidate);
+      } catch (err) {
+        if (!peer.ignoringOffer) console.warn("addIceCandidate failed", err);
+      }
+    }
+  }, []);
 
   const closePeer = useCallback((remoteSession: string) => {
     const peer = peersRef.current.get(remoteSession);
@@ -234,12 +269,17 @@ export function useVoice({
       peer.pc.onicecandidate = null;
       peer.pc.ontrack = null;
       peer.pc.onnegotiationneeded = null;
+      peer.pc.onconnectionstatechange = null;
       peer.pc.close();
     } catch {
       /* noop */
     }
-    peer.audioEl.srcObject = null;
-    peer.audioEl.remove();
+    // Remove the remote <audio> element so its sound fully stops.
+    if (peer.audioEl) {
+      peer.audioEl.srcObject = null;
+      peer.audioEl.remove();
+    }
+    peer.candidateQueue.length = 0;
     peersRef.current.delete(remoteSession);
     setRemoteStreams((prev) => {
       if (!prev.has(remoteSession)) return prev;
@@ -289,6 +329,10 @@ export function useVoice({
             peer.ignoringOffer = !peer.polite && offerCollision;
             if (peer.ignoringOffer) return;
             await peer.pc.setRemoteDescription(desc);
+            // Remote description is set: safe to accept candidates now, and
+            // flush everything that arrived earlier without crashing.
+            peer.remoteDescriptionSet = true;
+            await drainCandidateQueue(peer);
             if (desc.type === "offer") {
               await peer.pc.setLocalDescription();
               await sendSignal({
@@ -300,10 +344,20 @@ export function useVoice({
               });
             }
           } else if (signal.kind === "ice") {
-            const peer = peersRef.current.get(from);
-            if (!peer) return;
+            const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
+            let peer = peersRef.current.get(from);
+            if (!peer) {
+              // Peer may not exist yet (signal race) — buffer in a detached
+              // queue entry so nothing is lost and nothing crashes.
+              peer = createPeer(from);
+              peersRef.current.set(from, peer);
+            }
+            if (!peer.remoteDescriptionSet) {
+              peer.candidateQueue.push(candidate);
+              return;
+            }
             try {
-              await peer.pc.addIceCandidate(JSON.parse(signal.payload));
+              await peer.pc.addIceCandidate(candidate);
             } catch (err) {
               if (!peer.ignoringOffer) throw err;
             }
@@ -322,9 +376,12 @@ export function useVoice({
     if (inVoiceRef.current) return;
     setError(null);
     try {
+      // Voice-first join: mic with echo cancellation / noise suppression / AGC.
+      // Video is requested lazily via the camera toggle, so permission dialog
+      // and channel latency stay minimal.
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: { width: { ideal: 640 }, height: { ideal: 480 } },
+        video: false,
       });
       localStreamRef.current = stream;
       setLocalStream(stream);
@@ -334,7 +391,7 @@ export function useVoice({
     } catch (err) {
       const message =
         err instanceof DOMException && err.name === "NotAllowedError"
-          ? "Mikrofon/kamera izni reddedildi. Tarayıcı adres çubuğundan izinleri kontrol et."
+          ? "Mikrofon izni reddedildi. Tarayıcı adres çubuğundan izinleri kontrol et."
           : err instanceof Error
             ? err.message
             : "Mikrofon açılamadı.";
@@ -345,7 +402,9 @@ export function useVoice({
   const leave = useCallback(() => {
     inVoiceRef.current = false;
     setInVoice(false);
+    // Close every peer connection and drop remote audio elements.
     for (const id of Array.from(peersRef.current.keys())) closePeer(id);
+    // Stop all local tracks (mic + camera if any).
     const stream = localStreamRef.current;
     if (stream) {
       for (const track of stream.getTracks()) track.stop();
@@ -353,12 +412,15 @@ export function useVoice({
     localStreamRef.current = null;
     setLocalStream(null);
     setRemoteStreams(new Map());
+    cameraAcquiringRef.current = false;
     const ctx = audioCtxRef.current;
     if (ctx) {
       void ctx.close().catch(() => undefined);
       audioCtxRef.current = null;
     }
     setSpeakingSet(new Set());
+    camOnRef.current = false;
+    setCamOn(false);
   }, [closePeer]);
 
   const toggleMic = useCallback(() => {
@@ -376,12 +438,76 @@ export function useVoice({
     }
   }, [sessionId, setTrackEnabled]);
 
-  const toggleCam = useCallback(() => {
-    const next = !camOnRef.current;
-    camOnRef.current = next;
-    setCamOn(next);
-    setTrackEnabled("video", next);
-  }, [setTrackEnabled]);
+  const toggleCam = useCallback(async () => {
+    if (camOnRef.current) {
+      // Turn camera off: flip the flag and stop the video track cleanly.
+      camOnRef.current = false;
+      setCamOn(false);
+      const stream = localStreamRef.current;
+      if (stream) {
+        for (const track of stream.getVideoTracks()) {
+          track.stop();
+          stream.removeTrack(track);
+        }
+      }
+      // Renegotiate so peers drop the video track.
+      for (const peer of peersRef.current.values()) {
+        peer.pc.onnegotiationneeded?.apply(peer.pc);
+      }
+      return;
+    }
+    if (cameraAcquiringRef.current) return;
+    cameraAcquiringRef.current = true;
+    try {
+      let stream = localStreamRef.current;
+      if (!stream) {
+        // Not in voice: behave like a voice join with camera.
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: { width: { ideal: 640 }, height: { ideal: 480 } },
+        });
+        localStreamRef.current = stream;
+        setLocalStream(stream);
+        attachSpeakingMonitor(stream);
+        inVoiceRef.current = true;
+        setInVoice(true);
+      } else {
+        const cam = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 } },
+        });
+        const track = cam.getVideoTracks()[0];
+        if (!track) throw new Error("Kamera açılamadı.");
+        cam.getAudioTracks().forEach((t) => t.stop()); // avoid double mic capture
+        stream.addTrack(track);
+        // Replace the video sender per peer so no renegotiation is needed.
+        let replaced = false;
+        for (const peer of peersRef.current.values()) {
+          const sender = peer.pc.getSenders().find((s) => s.track?.kind === "video");
+          if (sender) {
+            await sender.replaceTrack(track);
+            replaced = true;
+          }
+        }
+        if (!replaced) {
+          for (const peer of peersRef.current.values()) {
+            peer.pc.addTrack(track, stream);
+          }
+        }
+      }
+      camOnRef.current = true;
+      setCamOn(true);
+    } catch (err) {
+      const message =
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Kamera izni reddedildi."
+          : err instanceof Error
+            ? err.message
+            : "Kamera açılamadı.";
+      setError(message);
+    } finally {
+      cameraAcquiringRef.current = false;
+    }
+  }, [attachSpeakingMonitor]);
 
   useEffect(() => () => leave(), [leave]);
 
@@ -402,6 +528,6 @@ export function useVoice({
     join,
     leave,
     toggleMic,
-    toggleCam,
+    toggleCam: () => void toggleCam(),
   };
 }
