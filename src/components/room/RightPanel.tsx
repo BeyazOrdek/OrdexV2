@@ -2,7 +2,7 @@ import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import type { VoiceParticipant } from "@/hooks/use-voice";
 import { cn } from "@/lib/utils";
-import { avatarHue, initials, parseYouTube, thumbFor } from "@/lib/utils-room";
+import { avatarHue, initials, parseMediaLink, thumbFor, type ParsedMediaLink } from "@/lib/utils-room";
 import { useMutation, useQuery } from "convex/react";
 import {
   Headphones,
@@ -62,16 +62,21 @@ export function RightPanel({
   const pending = queue.filter((q) => !q.played);
 
   const submitLink = () => {
-    const videoId = parseYouTube(link);
-    if (!videoId) {
-      setLinkError("Geçerli bir YouTube linki gir (watch, youtu.be veya shorts).");
+    const media = parseMediaLink(link);
+    if (!media) {
+      setLinkError("YouTube veya doğrudan video linki gir (mp4/webm/tau-video de olur).");
       return;
     }
     setLinkError(null);
     setLink("");
-    void addToQueue({ roomId: roomId as never, videoId, title: videoId, thumb: thumbFor(videoId) }).catch(
-      (err) => setLinkError(err instanceof Error ? err.message : "Kuyruğa eklenemedi."),
-    );
+    void addToQueue({
+      roomId: roomId as never,
+      videoId: media.key,
+      mediaType: media.type,
+      mediaUrl: media.url,
+      title: media.title,
+      thumb: media.thumb,
+    }).catch((err) => setLinkError(err instanceof Error ? err.message : "Kuyruğa eklenemedi."));
   };
 
   return (
@@ -88,7 +93,7 @@ export function RightPanel({
               value={link}
               onChange={(e) => setLink(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submitLink()}
-              placeholder="YouTube linki yapıştır..."
+              placeholder="YouTube veya mp4 linki yapıştır..."
               className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-red-500/40"
             />
           </div>
@@ -117,9 +122,9 @@ export function RightPanel({
                 {i + 1}
               </span>
               <img
-                src={item.thumb ?? thumbFor(item.videoId)}
+                src={item.thumb ?? (item.mediaType === "direct" ? undefined : thumbFor(item.videoId))}
                 alt=""
-                className="h-8 w-14 shrink-0 rounded object-cover"
+                className={cn("h-8 w-14 shrink-0 rounded object-cover", !item.thumb && item.mediaType === "direct" && "bg-white/5 object-contain p-1")}
                 loading="lazy"
               />
               <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-300">

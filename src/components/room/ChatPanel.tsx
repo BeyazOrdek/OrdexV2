@@ -33,6 +33,10 @@ interface Gif {
   desc: string;
 }
 
+// Reuses the backend Tenor proxy (src/convex/tenor.ts, fetchTenorGifs):
+// the API key stays server-side, browser calls go through the Convex action
+// (or the public GET /api/gifs endpoint for external tools).
+
 export function ChatPanel({ roomId }: { roomId: string }) {
   const { user } = useAuth();
   const messages = (useQuery(api.chat.listMessages, { roomId: roomId as never }) ?? []).slice().reverse() as ChatMessage[];

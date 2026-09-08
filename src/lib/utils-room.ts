@@ -73,3 +73,60 @@ export function parseYouTube(input: string): string | null {
 export function thumbFor(videoId: string): string {
   return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
 }
+
+export type MediaKind = "youtube" | "direct";
+
+export interface ParsedMediaLink {
+  type: MediaKind;
+  /** Media key stored in room state / queue: YouTube id, or the full URL. */
+  key: string;
+  /** For direct files: the playback URL (same as key). */
+  url?: string;
+  title: string;
+  thumb?: string;
+}
+
+const DIRECT_EXT = /\.(mp4|webm|m4v|mov|ogv|ogg)(\?|#|$)/i;
+
+/**
+ * Classify any pasted link. Direct files (.mp4/.webm/tau-video CDN links etc.)
+ * play in a raw HTML5 <video>; YouTube links go through the IFrame API.
+ * Returns null only for text that is neither a URL nor a YouTube id.
+ */
+export function parseMediaLink(input: string): ParsedMediaLink | null {
+  const raw = input.trim();
+  if (!raw) return null;
+
+  // Bare YouTube id.
+  if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) {
+    return { type: "youtube", key: raw, title: raw, thumb: thumbFor(raw) };
+  }
+
+  try {
+    const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    if (!/^https?:$/.test(url.protocol)) return null;
+    const host = url.hostname.replace(/^www\./, "");
+
+    // YouTube (watch, youtu.be, shorts, embed, live, nocookie).
+    if (host === "youtu.be" || host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com")) {
+      const id = parseYouTube(raw);
+      if (id) return { type: "youtube", key: id, title: id, thumb: thumbFor(id) };
+    }
+
+    // Direct video files: extension in the path, or known tau-video style links.
+    if (DIRECT_EXT.test(url.pathname) || /tau-video|taucdn/i.test(`${host}${url.pathname}`)) {
+      const fileName = decodeURIComponent(url.pathname.split("/").pop() ?? "video");
+      return {
+        type: "direct",
+        key: url.toString(),
+        url: url.toString(),
+        title: fileName || "Video",
+        thumb: undefined,
+      };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}

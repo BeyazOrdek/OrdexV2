@@ -7,8 +7,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { useRoomPresence } from "@/hooks/use-room-presence";
 import { useVoice } from "@/hooks/use-voice";
-import { useYouTubeSync } from "@/hooks/use-youtube-sync";
-import { avatarHue, getSessionId } from "@/lib/utils-room";
+import { useMediaSync } from "@/hooks/use-media-sync";
+import { avatarHue, getSessionId, type ParsedMediaLink } from "@/lib/utils-room";
 import { useMutation, useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -107,25 +107,27 @@ function RoomView({
     onVoiceStateChange: setVoiceUi,
   });
 
-  const sync = useYouTubeSync({ roomId, sessionId, onEnded: () => undefined });
+  const sync = useMediaSync({ roomId, sessionId, onEnded: () => undefined });
   const advanceQueue = useMutation(api.rooms.advanceQueue);
   const addToQueue = useMutation(api.rooms.addToQueue);
 
-  // Auto-advance the queue when a video ends.
+  // Auto-advance the queue when a video ends (any media type).
   const endedRef = useRef<string>("");
   useEffect(() => {
-    if (!sync.endedVideoId || endedRef.current === sync.endedVideoId) return;
-    endedRef.current = sync.endedVideoId;
-    void advanceQueue({ roomId, finishedVideoId: sync.endedVideoId }).catch(() => undefined);
-  }, [sync.endedVideoId, roomId, advanceQueue]);
+    if (!sync.endedMediaKey || endedRef.current === sync.endedMediaKey) return;
+    endedRef.current = sync.endedMediaKey;
+    void advanceQueue({ roomId, finishedVideoId: sync.endedMediaKey }).catch(() => undefined);
+  }, [sync.endedMediaKey, roomId, advanceQueue]);
 
   const addLink = useCallback(
-    (videoId: string) => {
+    (media: ParsedMediaLink) => {
       void addToQueue({
         roomId,
-        videoId,
-        title: videoId,
-        thumb: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+        videoId: media.key,
+        mediaType: media.type,
+        mediaUrl: media.url,
+        title: media.title,
+        thumb: media.thumb,
       }).catch(() => undefined);
     },
     [roomId, addToQueue],

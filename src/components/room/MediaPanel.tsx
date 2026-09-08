@@ -1,6 +1,6 @@
-import type { YouTubeSync } from "@/hooks/use-youtube-sync";
+import type { MediaSync } from "@/hooks/use-media-sync";
 import { cn } from "@/lib/utils";
-import { formatTime, parseYouTube } from "@/lib/utils-room";
+import { formatTime, parseMediaLink, type ParsedMediaLink } from "@/lib/utils-room";
 import { Link2, Loader2, MonitorPlay, Pause, Play, Radio, SkipForward, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,8 @@ import { Slider } from "@/components/ui/slider";
 interface MediaPanelProps {
   roomName: string;
   roomCode: string;
-  sync: YouTubeSync;
-  onAddLink: (videoId: string) => void;
+  sync: MediaSync;
+  onAddLink: (media: ParsedMediaLink) => void;
   onNext: () => void;
   localStream: MediaStream | null;
   camOn: boolean;
@@ -28,29 +28,30 @@ export function MediaPanel({
 }: MediaPanelProps) {
   const [link, setLink] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
-  const videoId = parseYouTube(link);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const parsed = link.trim() ? parseMediaLink(link) : null;
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
 
   // Attach the local camera preview.
   useEffect(() => {
-    const el = videoRef.current;
+    const el = videoPreviewRef.current;
     if (!el) return;
-    if (localStream) {
+    if (localStream && camOn) {
       el.srcObject = localStream;
       void el.play().catch(() => undefined);
     } else {
       el.srcObject = null;
     }
-  }, [localStream]);
+  }, [localStream, camOn]);
 
   const submit = () => {
-    if (!videoId) {
-      setLinkError("Geçerli bir YouTube linki gir.");
+    const media = parseMediaLink(link);
+    if (!media) {
+      setLinkError("Geçerli bir link gir (YouTube veya doğrudan mp4/webm).");
       return;
     }
     setLinkError(null);
     setLink("");
-    onAddLink(videoId);
+    onAddLink(media);
   };
 
   // Copy invite link.
@@ -60,38 +61,56 @@ export function MediaPanel({
       .catch(() => undefined);
   };
 
+  const isDirect = sync.mediaType === "direct";
+
   return (
     <section className="flex h-full min-h-0 w-full flex-col bg-[#0b0c0e]">
       {/* Player area */}
       <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black">
         <div className="relative aspect-video max-h-full w-full max-w-full">
-          {/* Always mounted: the YT API replaces this node with the iframe on init. */}
-          <div ref={sync.containerRef} className="absolute inset-0 size-full [&_iframe]:size-full" />
+          {/* YouTube host — always mounted; the YT API replaces this node with the iframe on init. */}
+          <div
+            ref={sync.containerRef}
+            className={cn("absolute inset-0 size-full [&_iframe]:size-full", isDirect && "invisible")}
+          />
+          {/* Direct HTML5 video — always mounted; only visible for direct files. */}
+          <video
+            ref={sync.videoRef}
+            playsInline
+            controls={false}
+            className={cn(
+              "absolute inset-0 size-full bg-black object-contain",
+              !isDirect && "invisible",
+            )}
+          />
           {!sync.hasVideo && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
               <span className="flex size-14 items-center justify-center rounded-2xl bg-red-600/15 text-red-500">
                 <MonitorPlay className="size-7" />
               </span>
               <p className="text-sm font-medium text-zinc-300">Henüz video yok</p>
               <p className="max-w-xs text-xs text-zinc-600">
-                Aşağıya bir YouTube linki yapıştır — odadaki herkeste aynı anda, senkron oynar.
+                Aşağıya bir YouTube veya doğrudan video linki yapıştır — odadaki herkeste aynı anda, senkron oynar.
               </p>
             </div>
           )}
         </div>
           {sync.hasVideo && !sync.ready && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
               <Loader2 className="size-6 animate-spin text-zinc-500" />
             </div>
           )}
 
         {/* Local camera preview (self view) */}
-        {localStream && camOn && (
+        {localStream && (
           <video
-            ref={videoRef}
+            ref={videoPreviewRef}
             muted
             playsInline
-            className="absolute right-3 top-3 z-10 h-24 w-32 rounded-md border border-white/20 bg-black object-cover shadow-lg"
+            className={cn(
+              "absolute right-3 top-3 z-10 h-24 w-32 rounded-md border border-white/20 bg-black object-cover shadow-lg",
+              !camOn && "hidden",
+            )}
           />
         )}
 
@@ -166,7 +185,7 @@ export function MediaPanel({
                 value={link}
                 onChange={(e) => setLink(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
-                placeholder="YouTube linki gir ve herkeste başlat..."
+                placeholder="YouTube veya mp4/tau-video linki gir..."
                 className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-red-500/40"
               />
             </div>
@@ -176,8 +195,9 @@ export function MediaPanel({
               disabled={!link.trim()}
               className={cn(
                 "h-9 shrink-0 bg-red-600 px-3 text-xs text-white hover:bg-red-500",
-                videoId && "bg-emerald-600 hover:bg-emerald-500",
+                parsed && "bg-emerald-600 hover:bg-emerald-500",
               )}
+              title={parsed ? (parsed.type === "youtube" ? "YouTube olarak oynat" : "Doğrudan video olarak oynat") : undefined}
             >
               Oynat
             </Button>

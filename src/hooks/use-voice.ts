@@ -156,6 +156,28 @@ export function useVoice({
     });
   }, []);
 
+  /** (Re)negotiate a peer: setLocalDescription then send the offer. */
+  const negotiate = useCallback(
+    async (peer: Peer) => {
+      try {
+        peer.makingOffer = true;
+        await peer.pc.setLocalDescription();
+        await sendSignal({
+          roomId,
+          fromSession: sessionId,
+          toSession: peer.sessionId,
+          kind: "offer",
+          payload: JSON.stringify(peer.pc.localDescription?.toJSON()),
+        });
+      } catch {
+        /* negotiation raced; ignore */
+      } finally {
+        peer.makingOffer = false;
+      }
+    },
+    [roomId, sendSignal, sessionId],
+  );
+
   const createPeer = useCallback(
     (remoteSession: string): Peer => {
       const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -226,28 +248,12 @@ export function useVoice({
 
       // Perfect negotiation.
       pc.onnegotiationneeded = () => {
-        (async () => {
-          try {
-            peer.makingOffer = true;
-            await pc.setLocalDescription();
-            await sendSignal({
-              roomId,
-              fromSession: sessionId,
-              toSession: remoteSession,
-              kind: "offer",
-              payload: JSON.stringify(pc.localDescription?.toJSON()),
-            });
-          } catch {
-            /* negotiation raced; ignore */
-          } finally {
-            peer.makingOffer = false;
-          }
-        })();
+        void negotiate(peer);
       };
 
       return peer;
     },
-    [roomId, sendSignal, sessionId, playWithAutoplayGuard],
+    [roomId, sendSignal, sessionId, playWithAutoplayGuard, negotiate],
   );
 
   /** Flush ICE candidates queued while setRemoteDescription was pending. */
@@ -452,7 +458,7 @@ export function useVoice({
       }
       // Renegotiate so peers drop the video track.
       for (const peer of peersRef.current.values()) {
-        peer.pc.onnegotiationneeded?.apply(peer.pc);
+        void negotiate(peer);
       }
       return;
     }
@@ -507,7 +513,7 @@ export function useVoice({
     } finally {
       cameraAcquiringRef.current = false;
     }
-  }, [attachSpeakingMonitor]);
+  }, [attachSpeakingMonitor, negotiate]);
 
   useEffect(() => () => leave(), [leave]);
 
