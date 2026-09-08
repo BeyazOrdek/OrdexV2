@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { avatarHue, initials } from "@/lib/utils-room";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { Image as ImageIcon, Loader2, Search, Send, SmilePlus, UserPlus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { badgeMeta } from "@/lib/profile";
 
 const QUICK_EMOJIS = ["👍", "😂", "❤️", "🔥", "😮", "😢", "🎉", "👀"];
 
@@ -47,6 +48,18 @@ export function ChatPanel({ roomId }: { roomId: string }) {
   const { user } = useAuth();
   const messages = (useQuery(api.chat.listMessages, { roomId: roomId as never }) ?? []).slice().reverse() as ChatMessage[];
   const reactions = useQuery(api.chat.listReactions, { roomId: roomId as never }) ?? [];
+
+  // Rich profiles (name color + badges) for message authors.
+  const authorIds = useMemo(() => [...new Set(messages.map((m) => m.userId))] as never[], [messages]);
+  const profileRows = useQuery(
+    api.users.getUsersPublic,
+    authorIds.length > 0 ? { userIds: authorIds } : "skip",
+  );
+  const profiles = useMemo(
+    () => new Map((profileRows ?? []).map((p) => [String(p._id), p])),
+    [profileRows],
+  );
+  const profileFor = (m: ChatMessage) => profiles.get(String(m.userId));
 
   const sendMessage = useMutation(api.chat.sendMessage);
   const toggleReaction = useMutation(api.chat.toggleReaction);
@@ -118,6 +131,8 @@ export function ChatPanel({ roomId }: { roomId: string }) {
         )}
         {messages.map((m) => {
           const mine = user?._id === m.userId;
+          const profile = profileFor(m);
+          const nameColor = profile?.nameColor;
           const groups = reactionGroups.get(m._id);
           return (
             <div key={m._id} className="group relative mb-3 flex gap-2">
@@ -128,16 +143,20 @@ export function ChatPanel({ roomId }: { roomId: string }) {
                 {initials(m.userName)}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                   {mine ? (
-                    <span className="truncate text-xs font-semibold text-zinc-100">
+                    <span
+                      className="truncate text-xs font-semibold"
+                      style={{ color: nameColor ?? "var(--ordex-text, #f4f4f5)" }}
+                    >
                       {m.userName}
                     </span>
                   ) : (
                     <Popover>
                       <PopoverTrigger asChild>
                         <button
-                          className="truncate text-xs font-semibold text-zinc-100 hover:underline"
+                          className="truncate text-xs font-semibold hover:underline"
+                          style={{ color: nameColor ?? "var(--ordex-text, #f4f4f5)" }}
                           title="Arkadaş ekle"
                         >
                           {m.userName}
@@ -160,6 +179,14 @@ export function ChatPanel({ roomId }: { roomId: string }) {
                       </PopoverContent>
                     </Popover>
                   )}
+                  {(profile?.badges ?? []).map((b) => {
+                    const meta = badgeMeta(b);
+                    return meta ? (
+                      <span key={b} title={meta.label}>
+                        {meta.icon}
+                      </span>
+                    ) : null;
+                  })}
                   <span className="shrink-0 text-[10px] text-zinc-600">
                     {new Date(m.createdAt).toLocaleTimeString("tr-TR", {
                       hour: "2-digit",

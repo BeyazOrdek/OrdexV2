@@ -109,7 +109,7 @@ export function MediaPanel({
         ref={stageRef}
         className="ordex-fs-stage relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black"
       >
-        <div className="relative aspect-video max-h-full w-full max-w-full">
+        <div className="relative aspect-video max-h-full w-full max-w-full max-md:max-h-[56vw]">
           {/* YouTube host — always mounted. The YT API mounts its iframe inside
               a disposable inner div created by use-media-sync; React never
               owns the swapped node, so the virtual DOM stays consistent. */}
@@ -165,7 +165,7 @@ export function MediaPanel({
           </span>
         )}
 
-        {/* Stage overlay buttons: cinema toggles + fullscreen */}
+        {/* Stage overlay buttons: cinema toggle + fullscreen */}
         <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5">
           <Button
             size="icon"

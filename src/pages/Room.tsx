@@ -1,13 +1,16 @@
 import { ChatPanel } from "@/components/room/ChatPanel";
 import { LeftPanel } from "@/components/room/LeftPanel";
 import { MediaPanel } from "@/components/room/MediaPanel";
+import { GamingStage } from "@/components/room/GamingStage";
 import { RightPanel } from "@/components/room/RightPanel";
+import { MobileNav, type MobileTab } from "@/components/room/MobileNav";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useAuth } from "@/hooks/use-auth";
 import { useRoomPresence } from "@/hooks/use-room-presence";
 import { useVoice } from "@/hooks/use-voice";
 import { useMediaSync } from "@/hooks/use-media-sync";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { avatarHue, getSessionId, type ParsedMediaLink } from "@/lib/utils-room";
 import { useMutation, useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
@@ -65,6 +68,7 @@ export default function Room() {
       roomId={roomId}
       roomCode={room.code}
       roomName={room.name}
+      roomType={room.roomType ?? "cinema"}
       sessionId={sessionId}
       userName={user?.name ?? "Misafir"}
       userId={user?._id ?? "anon"}
@@ -76,6 +80,7 @@ function RoomView({
   roomId,
   roomCode,
   roomName,
+  roomType,
   sessionId,
   userName,
   userId,
@@ -83,12 +88,13 @@ function RoomView({
   roomId: Id<"rooms">;
   roomCode: string;
   roomName: string;
+  roomType: "cinema" | "gaming";
   sessionId: string;
   userName: string;
   userId: string;
 }) {
   // Voice UI state mirrored up so presence heartbeats reflect it.
-  const [voiceUi, setVoiceUi] = useState({ inVoice: false, micOn: true, camOn: true });
+  const [voiceUi, setVoiceUi] = useState({ inVoice: false, micOn: true, camOn: true, isSharing: false });
 
   const presence = useRoomPresence({
     roomId,
@@ -98,6 +104,7 @@ function RoomView({
     inVoice: voiceUi.inVoice,
     micOn: voiceUi.micOn,
     camOn: voiceUi.camOn,
+    isSharing: voiceUi.isSharing,
   });
 
   const voice = useVoice({
@@ -142,32 +149,79 @@ function RoomView({
   const [cinema, setCinema] = useState(false);
   const toggleCinema = useCallback(() => setCinema((v) => !v), []);
 
+  // Mobile: bottom nav switches between stage / chat / voice / friends panels.
+  const isMobile = useIsMobile();
+  const [mobileTab, setMobileTab] = useState<MobileTab>("stage");
+
+  const rightPanel = (
+    <div className="flex h-full min-h-0 w-full flex-col border-white/5">
+      <div className="min-h-0 flex-[3] border-b border-white/5">
+        <ChatPanel roomId={roomId} />
+      </div>
+      <div className="min-h-0 flex-[4]">
+        <RightPanel
+          roomId={roomId}
+          sessionId={sessionId}
+          participants={presence.participants}
+          voiceParticipants={voice.participants}
+          inVoice={voice.inVoice}
+          micOn={voice.micOn}
+          camOn={voice.camOn}
+          voiceError={voice.error}
+          onJoinVoice={() => void voice.join()}
+          onLeaveVoice={voice.leave}
+          onToggleMic={voice.toggleMic}
+          onToggleCam={voice.toggleCam}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <main className="flex h-screen overflow-hidden bg-background text-foreground">
-      {!cinema && (
-        <div className="hidden w-60 shrink-0 md:block">
+      {!cinema && !isMobile && (
+        <div className="w-60 shrink-0">
           <LeftPanel activeCode={roomCode} />
         </div>
       )}
-      <div className="min-w-0 flex-1">
-        <MediaPanel
-          roomName={roomName}
-          roomCode={roomCode}
-          sync={sync}
-          onAddLink={addLink}
-          onNext={skipToNext}
-          localStream={voice.localStream}
-          camOn={voice.camOn}
-          cinemaMode={cinema}
-          onToggleCinema={toggleCinema}
-        />
-      </div>
-      {!cinema && (
-        <div className="flex w-80 shrink-0 flex-col border-l border-white/5">
-          <div className="min-h-0 flex-[3] border-b border-white/5">
+
+      <div className="min-w-0 flex-1 pb-16 md:pb-0">
+        {isMobile ? (
+          mobileTab === "stage" ? (
+            roomType === "gaming" ? (
+              <GamingStage
+                roomName={roomName}
+                roomCode={roomCode}
+                participants={voice.participants}
+                inVoice={voice.inVoice}
+                micOn={voice.micOn}
+                isSharing={voice.isSharing}
+                localStream={voice.localStream}
+                remoteStreams={voice.remoteStreams}
+                onJoinVoice={() => void voice.join()}
+                onLeaveVoice={voice.leave}
+                onToggleMic={voice.toggleMic}
+                onStartShare={voice.startScreenShare}
+                onStopShare={voice.stopScreenShare}
+                cinemaMode={cinema}
+                onToggleCinema={toggleCinema}
+              />
+            ) : (
+              <MediaPanel
+                roomName={roomName}
+                roomCode={roomCode}
+                sync={sync}
+                onAddLink={addLink}
+                onNext={skipToNext}
+                localStream={voice.localStream}
+                camOn={voice.camOn}
+                cinemaMode={cinema}
+                onToggleCinema={toggleCinema}
+              />
+            )
+          ) : mobileTab === "chat" ? (
             <ChatPanel roomId={roomId} />
-          </div>
-          <div className="min-h-0 flex-[4]">
+          ) : mobileTab === "voice" ? (
             <RightPanel
               roomId={roomId}
               sessionId={sessionId}
@@ -182,8 +236,54 @@ function RoomView({
               onToggleMic={voice.toggleMic}
               onToggleCam={voice.toggleCam}
             />
-          </div>
-        </div>
+          ) : (
+            <div className="ordex-panel h-full border-r border-white/5">
+              <LeftPanel activeCode={roomCode} />
+            </div>
+          )
+        ) : roomType === "gaming" ? (
+          <GamingStage
+            roomName={roomName}
+            roomCode={roomCode}
+            participants={voice.participants}
+            inVoice={voice.inVoice}
+            micOn={voice.micOn}
+            isSharing={voice.isSharing}
+            localStream={voice.localStream}
+            remoteStreams={voice.remoteStreams}
+            onJoinVoice={() => void voice.join()}
+            onLeaveVoice={voice.leave}
+            onToggleMic={voice.toggleMic}
+            onStartShare={voice.startScreenShare}
+            onStopShare={voice.stopScreenShare}
+            cinemaMode={cinema}
+            onToggleCinema={toggleCinema}
+          />
+        ) : (
+          <MediaPanel
+            roomName={roomName}
+            roomCode={roomCode}
+            sync={sync}
+            onAddLink={addLink}
+            onNext={skipToNext}
+            localStream={voice.localStream}
+            camOn={voice.camOn}
+            cinemaMode={cinema}
+            onToggleCinema={toggleCinema}
+          />
+        )}
+      </div>
+
+      {!cinema && !isMobile && (
+        <div className="flex w-80 shrink-0 flex-col border-l border-white/5">{rightPanel}</div>
+      )}
+
+      {isMobile && (
+        <MobileNav
+          tab={mobileTab}
+          onTabChange={setMobileTab}
+          voiceCount={voice.participants.length}
+        />
       )}
     </main>
   );

@@ -34,7 +34,15 @@ const schema = defineSchema(
       // ÖRDEX profile extensions
       statusMessage: v.optional(v.string()),
       avatarUrl: v.optional(v.string()), // custom avatar image or Tenor GIF url
-    }).index("email", ["email"]), // index for the email. do not remove or modify
+      // Rich profile customization
+      username: v.optional(v.string()), // unique lowercase handle (Guest_#### for guests)
+      bannerColor: v.optional(v.string()), // profile card banner (any CSS color)
+      bannerUrl: v.optional(v.string()), // profile card banner image url
+      nameColor: v.optional(v.string()), // chat name color (any CSS color)
+      badges: v.optional(v.array(v.string())), // profile badges ("founder", "vip", "premium", ...)
+    })
+      .index("email", ["email"]) // index for the email. do not remove or modify
+      .index("by_username", ["username"]), // unique handle lookups (guest IDs, friend adds)
 
     // add other tables here
 
@@ -46,6 +54,8 @@ const schema = defineSchema(
       createdAt: v.number(),
       // "public" (default for legacy rows) filtering, join by code/link only when "secret"
       visibility: v.optional(v.union(v.literal("public"), v.literal("secret"))),
+      // Room type: cinema (synced YouTube/MP4 watch-together) or gaming (screen share)
+      roomType: v.optional(v.union(v.literal("cinema"), v.literal("gaming"))),
       // synchronized playback state (YouTube IFrame or direct HTML5 video)
       // currentVideoId is the media key: YouTube video id, or the full URL for direct files
       currentVideoId: v.optional(v.string()),
@@ -93,11 +103,13 @@ const schema = defineSchema(
       inVoice: v.boolean(),
       micOn: v.boolean(),
       camOn: v.boolean(),
+      isSharing: v.optional(v.boolean()), // screen/game broadcast flag (gaming rooms)
       joinedAt: v.number(),
       lastSeen: v.number(),
     })
       .index("by_room", ["roomId"])
-      .index("by_session", ["sessionId"]),
+      .index("by_session", ["sessionId"])
+      .index("by_user", ["userId"]),
 
     // WebRTC signaling relay (offers / answers / ICE candidates)
     signals: defineTable({

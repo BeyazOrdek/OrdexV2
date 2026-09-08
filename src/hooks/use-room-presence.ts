@@ -11,6 +11,7 @@ export interface PresenceOptions {
   inVoice: boolean;
   micOn: boolean;
   camOn: boolean;
+  isSharing?: boolean;
 }
 
 const HEARTBEAT_MS = 10_000;
@@ -24,14 +25,15 @@ export function useRoomPresence({
   inVoice,
   micOn,
   camOn,
+  isSharing = false,
 }: PresenceOptions) {
   const heartbeat = useMutation(api.presence.heartbeat);
   const presenceRows = useQuery(api.presence.listPresence, { roomId });
 
   const infoRef = useRef({ sessionId, userName, avatarHue });
   infoRef.current = { sessionId, userName, avatarHue };
-  const voiceRef = useRef({ inVoice, micOn, camOn });
-  voiceRef.current = { inVoice, micOn, camOn };
+  const voiceRef = useRef({ inVoice, micOn, camOn, isSharing });
+  voiceRef.current = { inVoice, micOn, camOn, isSharing };
 
   // Immediate heartbeat whenever voice state changes + periodic keepalive.
   useEffect(() => {
@@ -48,6 +50,7 @@ export function useRoomPresence({
         inVoice: v.inVoice,
         micOn: v.micOn,
         camOn: v.camOn,
+        isSharing: v.isSharing,
       }).catch(() => undefined);
     };
     beat();
@@ -56,7 +59,7 @@ export function useRoomPresence({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [roomId, heartbeat, inVoice, micOn, camOn]);
+  }, [roomId, heartbeat, inVoice, micOn, camOn, isSharing]);
 
   // Best-effort explicit leave on unmount.
   const leave = useMutation(api.presence.leave);

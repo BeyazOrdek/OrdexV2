@@ -12,6 +12,7 @@ export const heartbeat = mutation({
     inVoice: v.boolean(),
     micOn: v.boolean(),
     camOn: v.boolean(),
+    isSharing: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -29,6 +30,7 @@ export const heartbeat = mutation({
         inVoice: args.inVoice,
         micOn: args.micOn,
         camOn: args.camOn,
+        isSharing: args.isSharing ?? false,
         lastSeen: now,
       });
     } else {
@@ -41,6 +43,7 @@ export const heartbeat = mutation({
         inVoice: args.inVoice,
         micOn: args.micOn,
         camOn: args.camOn,
+        isSharing: args.isSharing ?? false,
         joinedAt: now,
         lastSeen: now,
       });
@@ -62,7 +65,50 @@ export const leave = mutation({
       .query("presence")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .unique();
-    if (row) await ctx.db.delete(row._id);
+    if (!row) return;
+    const wasSharing = row.isSharing === true;
+    await ctx.db.delete(row._id);
+    if (wasSharing) {
+      // The sharer left: clear the broadcast flag on the user's remaining
+      // presence rows so nobody subscribes to a dead stream.
+      const remaining = await ctx.db
+        .query("presence")
+        .withIndex("by_user", (q) => q.eq("userId", row.userId))
+        .collect();
+      await Promise.all(
+        remaining
+          .filter((r) => r.isSharing === true)
+          .map((r) => ctx.db.patch(r._id, { isSharing: false })),
+      );
+    }
+  },
+});
+
+/** Online status (fresh presence) for a set of users — powers friend online/offline dots. */
+export const listUsersPresence = query({
+  args: { userIds: v.array(v.id("users")) },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const FRESH_MS = 35_000;
+    const unique = [...new Set(args.userIds)].slice(0, 200);
+    const rows = await Promise.all(
+      unique.map(async (userId) => ({
+        userId,
+        sessions: await ctx.db
+          .query("presence")
+          .withIndex("by_user", (q) => q.eq("userId", userId))
+          .collect(),
+      })),
+    );
+    return rows.map(({ userId, sessions }) => {
+      const fresh = sessions.filter((s) => now - s.lastSeen < FRESH_MS);
+      return {
+        userId,
+        online: fresh.length > 0,
+        inVoice: fresh.some((s) => s.inVoice),
+        isSharing: fresh.some((s) => s.isSharing === true),
+      };
+    });
   },
 });
 

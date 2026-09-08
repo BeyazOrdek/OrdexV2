@@ -26,6 +26,8 @@ async function publicUser(ctx: QueryCtx, userId: Id<"users">) {
     name: user.name ?? "Misafir",
     statusMessage: user.statusMessage,
     avatarUrl: user.avatarUrl,
+    nameColor: user.nameColor,
+    badges: user.badges,
   };
 }
 

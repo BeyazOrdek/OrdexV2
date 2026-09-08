@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import { useMutation } from "convex/react";
-import { Globe2, Loader2, Lock } from "lucide-react";
+import { Clapperboard, Gamepad2, Globe2, Loader2, Lock } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,7 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
   const createRoom = useMutation(api.rooms.createRoom);
   const [roomName, setRoomName] = useState("");
   const [visibility, setVisibility] = useState<"public" | "secret">("public");
+  const [roomType, setRoomType] = useState<"cinema" | "gaming">("cinema");
   const [creating, setCreating] = useState(false);
   const [createdCode, setCreatedCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
       const result = await createRoom({
         name: roomName.trim() || `${user?.name ?? "Misafir"}'in odası`,
         visibility,
+        roomType,
       });
       setCreatedCode(result.code);
     } catch (err) {
@@ -52,6 +54,7 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
     if (!next) {
       setRoomName("");
       setVisibility("public");
+      setRoomType("cinema");
       setCreatedCode(null);
       setError(null);
     }
@@ -139,6 +142,41 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
                 <span className="text-xs font-semibold text-white">Gizli / davet kodlu</span>
                 <span className="text-[10px] leading-snug text-zinc-500">
                   Sadece kod veya link ile girilir
+                </span>
+              </button>
+            </div>
+            {/* Room type: cinema (synced watch-together) or gaming (screen share) */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRoomType("cinema")}
+                className={cn(
+                  "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
+                  roomType === "cinema"
+                    ? "border-[var(--ordex-accent)] bg-[var(--ordex-accent-soft)]"
+                    : "border-white/10 bg-black/20 hover:bg-white/5",
+                )}
+              >
+                <Clapperboard className="size-4 text-[var(--ordex-accent)]" />
+                <span className="text-xs font-semibold text-white">🎬 Sinema & Medya</span>
+                <span className="text-[10px] leading-snug text-zinc-500">
+                  Senkron YouTube/MP4 izleme, sıra, sesli + yazılı sohbet
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoomType("gaming")}
+                className={cn(
+                  "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
+                  roomType === "gaming"
+                    ? "border-[var(--ordex-accent)] bg-[var(--ordex-accent-soft)]"
+                    : "border-white/10 bg-black/20 hover:bg-white/5",
+                )}
+              >
+                <Gamepad2 className="size-4 text-[var(--ordex-accent)]" />
+                <span className="text-xs font-semibold text-white">🎮 Gaming & Ekran</span>
+                <span className="text-[10px] leading-snug text-zinc-500">
+                  Tek tıkla ekran/oyun yayını, herkes tam ekran izler
                 </span>
               </button>
             </div>

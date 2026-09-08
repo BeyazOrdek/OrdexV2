@@ -72,7 +72,11 @@ export const listPublicRooms = query({
 // ---------- Room lifecycle ----------
 
 export const createRoom = mutation({
-  args: { name: v.string(), visibility: v.optional(v.union(v.literal("public"), v.literal("secret"))) },
+  args: {
+    name: v.string(),
+    visibility: v.optional(v.union(v.literal("public"), v.literal("secret"))),
+    roomType: v.optional(v.union(v.literal("cinema"), v.literal("gaming"))),
+  },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const user = await ctx.db.get(userId);
@@ -93,6 +97,7 @@ export const createRoom = mutation({
       createdByName: user?.name ?? "Misafir",
       createdAt: Date.now(),
       visibility: args.visibility ?? "public",
+      roomType: args.roomType ?? "cinema",
       isPlaying: false,
       positionSec: 0,
       mediaUpdatedAt: Date.now(),

@@ -10,6 +10,20 @@ export function getSessionId(): string {
   return id;
 }
 
+/**
+ * Guest identity: reserve a unique Guest_#### handle once per browser and
+ * persist it in localStorage, so page refreshes and reconnects keep the same
+ * non-colliding temporary ID (server double-checks uniqueness on claim).
+ */
+export function ensureGuestUsername(): string {
+  let name = localStorage.getItem("senkron:guestUsername");
+  if (!name || !/^Guest_\d{4}$/.test(name)) {
+    name = `Guest_${Math.floor(1000 + Math.random() * 9000)}`;
+    localStorage.setItem("senkron:guestUsername", name);
+  }
+  return name;
+}
+
 export function avatarHue(seed: string): number {
   let h = 0;
   for (let i = 0; i < seed.length; i++) {

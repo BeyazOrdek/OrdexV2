@@ -27,6 +27,7 @@ export interface VoiceSessionInfo {
   avatarHue: number;
   micOn: boolean;
   camOn: boolean;
+  isSharing?: boolean;
 }
 
 export interface VoiceParticipant extends VoiceSessionInfo {
@@ -40,13 +41,14 @@ export interface UseVoiceOptions {
   /** Presence rows currently in voice — drives mesh topology. */
   voiceSessions: VoiceSessionInfo[];
   /** Optional callback so parents can mirror voice state (e.g. presence heartbeats). */
-  onVoiceStateChange?: (state: { inVoice: boolean; micOn: boolean; camOn: boolean }) => void;
+  onVoiceStateChange?: (state: { inVoice: boolean; micOn: boolean; camOn: boolean; isSharing: boolean }) => void;
 }
 
 export interface VoiceApi {
   inVoice: boolean;
   micOn: boolean;
   camOn: boolean;
+  isSharing: boolean;
   error: string | null;
   participants: VoiceParticipant[];
   localStream: MediaStream | null;
@@ -55,6 +57,8 @@ export interface VoiceApi {
   leave: () => void;
   toggleMic: () => void;
   toggleCam: () => void;
+  startScreenShare: () => void;
+  stopScreenShare: () => void;
 }
 
 /** Perfect-negotiation polite flag: lexicographically smaller session is polite. */
@@ -89,13 +93,17 @@ export function useVoice({
   const inVoiceRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const cameraAcquiringRef = useRef(false);
+  // Screen / game broadcast state (gaming rooms).
+  const [isSharing, setIsSharing] = useState(false);
+  const shareStreamRef = useRef<MediaStream | null>(null);
+  const sharingRef = useRef(false);
 
   // Mirror voice state up to the parent without re-triggering effects.
   const onVoiceStateChangeRef = useRef(onVoiceStateChange);
   onVoiceStateChangeRef.current = onVoiceStateChange;
   useEffect(() => {
-    onVoiceStateChangeRef.current?.({ inVoice, micOn, camOn });
-  }, [inVoice, micOn, camOn]);
+    onVoiceStateChangeRef.current?.({ inVoice, micOn, camOn, isSharing });
+  }, [inVoice, micOn, camOn, isSharing]);
 
   const setTrackEnabled = useCallback((kind: "audio" | "video", enabled: boolean) => {
     // Stream keeps running; we only flip track.enabled (no stop/reopen).
@@ -405,16 +413,97 @@ export function useVoice({
     }
   }, [attachSpeakingMonitor]);
 
+  /** Broadcast the display/game capture to every peer (replaces camera track). */
+  const startScreenShare = useCallback(async () => {
+    if (sharingRef.current) return;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 60 } },
+        audio: true,
+      });
+    } catch (err) {
+      const message =
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Ekran paylaşımı reddedildi."
+          : err instanceof Error
+            ? err.message
+            : "Ekran paylaşımı başlatılamadı.";
+      setError(message);
+      return;
+    }
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    // Browser's built-in "stop sharing" button ends the broadcast cleanly.
+    track.addEventListener("ended", () => stopScreenShareRef.current());
+    shareStreamRef.current = stream;
+    sharingRef.current = true;
+    setIsSharing(true);
+    let replaced = false;
+    for (const peer of peersRef.current.values()) {
+      const sender = peer.pc.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) {
+        await sender.replaceTrack(track);
+        replaced = true;
+      }
+    }
+    if (!replaced) {
+      for (const peer of peersRef.current.values()) {
+        peer.pc.addTrack(track, stream);
+      }
+    }
+    // If we were in a call without voice yet, also open the mic so viewers
+    // and sharer can talk (best-effort; sharing still works without it).
+    if (!localStreamRef.current) {
+      try {
+        const mic = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        localStreamRef.current = mic;
+        setLocalStream(mic);
+        attachSpeakingMonitor(mic);
+        inVoiceRef.current = true;
+        setInVoice(true);
+        for (const peer of peersRef.current.values()) {
+          for (const t of mic.getAudioTracks()) peer.pc.addTrack(t, mic);
+        }
+      } catch {
+        /* voice is optional while sharing */
+      }
+    }
+  }, [attachSpeakingMonitor]);
+
+  const stopScreenShare = useCallback(() => {
+    if (!sharingRef.current) return;
+    sharingRef.current = false;
+    setIsSharing(false);
+    const stream = shareStreamRef.current;
+    if (stream) {
+      for (const track of stream.getTracks()) track.stop();
+    }
+    shareStreamRef.current = null;
+    // Restore peers to camera-off state: stop video senders.
+    for (const peer of peersRef.current.values()) {
+      const sender = peer.pc.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) {
+        void sender.replaceTrack(null).catch(() => undefined);
+      }
+    }
+  }, []);
+  const stopScreenShareRef = useRef(stopScreenShare);
+  stopScreenShareRef.current = stopScreenShare;
+
   const leave = useCallback(() => {
     inVoiceRef.current = false;
     setInVoice(false);
     // Close every peer connection and drop remote audio elements.
     for (const id of Array.from(peersRef.current.keys())) closePeer(id);
-    // Stop all local tracks (mic + camera if any).
+    // Stop all local tracks (mic + camera + screen share if any).
     const stream = localStreamRef.current;
     if (stream) {
       for (const track of stream.getTracks()) track.stop();
     }
+    stopScreenShareRef.current();
     localStreamRef.current = null;
     setLocalStream(null);
     setRemoteStreams(new Map());
@@ -527,6 +616,7 @@ export function useVoice({
     inVoice,
     micOn,
     camOn,
+    isSharing,
     error,
     participants,
     localStream,
@@ -535,5 +625,7 @@ export function useVoice({
     leave,
     toggleMic,
     toggleCam: () => void toggleCam(),
+    startScreenShare: () => void startScreenShare(),
+    stopScreenShare,
   };
 }

@@ -14,7 +14,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -25,25 +25,58 @@ interface PublicUserLite {
   name: string;
   statusMessage?: string;
   avatarUrl?: string;
+  nameColor?: string;
+  badges?: string[];
 }
 
-function UserAvatar({ user, size = 8 }: { user: PublicUserLite; size?: number }) {
-  if (user.avatarUrl) {
-    return (
-      <img
-        src={user.avatarUrl}
-        alt={user.name}
-        className="shrink-0 rounded-full border border-white/15 object-cover"
-        style={{ width: `${size * 4}px`, height: `${size * 4}px` }}
-      />
-    );
-  }
+function UserAvatar({
+  user,
+  size = 8,
+  online,
+  sharing,
+}: {
+  user: PublicUserLite;
+  size?: number;
+  online?: boolean;
+  sharing?: boolean;
+}) {
+  const px = { width: `${size * 4}px`, height: `${size * 4}px` };
   return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-full bg-[var(--ordex-accent-soft)] text-[10px] font-bold text-[var(--ordex-accent)]"
-      style={{ width: `${size * 4}px`, height: `${size * 4}px` }}
-    >
-      {initials(user.name)}
+    <span className="relative inline-flex shrink-0">
+      {user.avatarUrl ? (
+        <img
+          src={user.avatarUrl}
+          alt={user.name}
+          className="rounded-full border border-white/15 object-cover"
+          style={px}
+        />
+      ) : (
+        <span
+          className="flex items-center justify-center rounded-full bg-[var(--ordex-accent-soft)] text-[10px] font-bold text-[var(--ordex-accent)]"
+          style={px}
+        >
+          {initials(user.name)}
+        </span>
+      )}
+      {/* Online / offline presence dot */}
+      {online !== undefined && (
+        <span
+          className={cn(
+            "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--ordex-panel-2, #1a1d21)]",
+            online ? "bg-emerald-400" : "bg-zinc-600",
+          )}
+          style={{ width: `${Math.max(7, size * 1.5)}px`, height: `${Math.max(7, size * 1.5)}px` }}
+          title={online ? "Çevrimiçi" : "Çevrimdışı"}
+        />
+      )}
+      {sharing && (
+        <span
+          className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-[var(--ordex-accent)] text-[7px] font-bold text-white"
+          title="Ekran yayınında"
+        >
+          ▶
+        </span>
+      )}
     </span>
   );
 }
@@ -53,6 +86,23 @@ export function FriendsPanel() {
   const incoming = (useQuery(api.social.listIncomingRequests, {}) ?? []) as PublicUserLite[];
   const outgoing = (useQuery(api.social.listOutgoingRequests, {}) ?? []) as PublicUserLite[];
   const dmContacts = (useQuery(api.social.listDmContacts, {}) ?? []) as (PublicUserLite & { lastAt: number })[];
+
+  // Live online/offline status from room presence (reactive).
+  const allIds = useMemo(
+    () =>
+      [...new Set([...friends, ...dmContacts].map((u) => u._id))] as never[],
+    [friends, dmContacts],
+  );
+  const presenceRows = useQuery(
+    api.presence.listUsersPresence,
+    allIds.length > 0 ? { userIds: allIds } : "skip",
+  );
+  const onlineMap = useMemo(
+    () => new Map((presenceRows ?? []).map((row) => [String(row.userId), row])),
+    [presenceRows],
+  );
+  const isOnline = (userId: string) => onlineMap.get(String(userId))?.online ?? false;
+  const isSharing = (userId: string) => onlineMap.get(String(userId))?.isSharing ?? false;
 
   const sendRequest = useMutation(api.social.sendFriendRequest);
   const acceptRequest = useMutation(api.social.acceptFriendRequest);
@@ -173,7 +223,7 @@ export function FriendsPanel() {
                 onClick={() => setDmWith(u)}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-white/5"
               >
-                <UserAvatar user={u} />
+                <UserAvatar user={u} online={isOnline(u._id)} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs text-zinc-200">{u.name}</span>
                   {u.statusMessage && (
@@ -265,9 +315,14 @@ export function FriendsPanel() {
         )}
         {friends.map((u) => (
           <div key={u._id} className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-white/5">
-            <UserAvatar user={u} />
+            <UserAvatar user={u} online={isOnline(u._id)} sharing={isSharing(u._id)} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs text-zinc-200">{u.name}</span>
+              <span
+                className="block truncate text-xs font-medium"
+                style={{ color: u.nameColor ?? (isOnline(u._id) ? "#e7e8ea" : "#71717a") }}
+              >
+                {u.name}
+              </span>
               {u.statusMessage && (
                 <span className="block truncate text-[10px] text-zinc-600">{u.statusMessage}</span>
               )}
