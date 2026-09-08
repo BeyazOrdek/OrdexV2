@@ -42,78 +42,241 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* CHANGE VALUES FOR THEME */
+/* ============================================================
+   ÖRDEX THEME ENGINE — 6 themes switched via [data-theme] on <html>.
+   Components consume --ordex-* vars (surfaces/brand) and the shadcn
+   tokens below are remapped per theme so dialogs/inputs follow too.
+   ============================================================ */
 :root {
   --radius: 0.625rem;
+  color-scheme: dark;
   --voice-green: oklch(0.72 0.19 150);
   --voice-red: oklch(0.62 0.24 25);
-  --background: oklch(0.16 0.005 260);
-  --foreground: oklch(0.93 0 0);
-  --card: oklch(0.21 0.006 260);
-  --card-foreground: oklch(0.93 0 0);
-  --popover: oklch(0.19 0.006 260);
-  --popover-foreground: oklch(0.93 0 0);
-  --primary: oklch(0.577 0.245 27.3);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.27 0.006 260);
-  --secondary-foreground: oklch(0.93 0 0);
-  --muted: oklch(0.27 0.006 260);
-  --muted-foreground: oklch(0.65 0 0);
-  --accent: oklch(0.27 0.006 260);
-  --accent-foreground: oklch(0.93 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: #131518;
+  --sidebar-foreground: #e7e8ea;
+  --sidebar-primary: #ff0000;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #232830;
+  --sidebar-accent-foreground: #e7e8ea;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #ff0000;
 }
 
+/* 1) YouTube Premium Dark (varsayılan) */
+:root,
+[data-theme="ordex-dark"] {
+  --ordex-accent: #ff0000;
+  --ordex-accent-hover: #d90000;
+  --ordex-accent-soft: rgba(255, 0, 0, 0.14);
+  --ordex-glow: rgba(255, 0, 0, 0.2);
+  --ordex-bg: #0b0c0e;
+  --ordex-panel: #131518;
+  --ordex-panel-2: #1a1d21;
+  --ordex-panel-3: #232830;
+  --ordex-text: #e7e8ea;
+  --ordex-muted: #9aa0a8;
+  --ordex-faint: #666c75;
+  --background: #0b0c0e;
+  --foreground: #e7e8ea;
+  --card: #131518;
+  --card-foreground: #e7e8ea;
+  --popover: #1a1d21;
+  --popover-foreground: #e7e8ea;
+  --primary: #ff0000;
+  --primary-foreground: #ffffff;
+  --secondary: #232830;
+  --secondary-foreground: #e7e8ea;
+  --muted: #232830;
+  --muted-foreground: #9aa0a8;
+  --accent: #232830;
+  --accent-foreground: #e7e8ea;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #ff0000;
+}
+
+/* 2) OLED Pure Black */
+[data-theme="oled"] {
+  --ordex-accent: #ff0000;
+  --ordex-accent-hover: #d90000;
+  --ordex-accent-soft: rgba(255, 0, 0, 0.12);
+  --ordex-glow: rgba(255, 0, 0, 0.16);
+  --ordex-bg: #000000;
+  --ordex-panel: #0a0a0a;
+  --ordex-panel-2: #111111;
+  --ordex-panel-3: #1a1a1a;
+  --ordex-text: #f1f1f1;
+  --ordex-muted: #a0a0a0;
+  --ordex-faint: #6a6a6a;
+  --background: #000000;
+  --foreground: #f1f1f1;
+  --card: #0a0a0a;
+  --card-foreground: #f1f1f1;
+  --popover: #111111;
+  --popover-foreground: #f1f1f1;
+  --primary: #ff0000;
+  --primary-foreground: #ffffff;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #f1f1f1;
+  --muted: #1a1a1a;
+  --muted-foreground: #a0a0a0;
+  --accent: #1a1a1a;
+  --accent-foreground: #f1f1f1;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(255, 255, 255, 0.07);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #ff0000;
+}
+
+/* 3) Midnight Violet (Discord vibe) */
+[data-theme="violet"] {
+  --ordex-accent: #7c5cff;
+  --ordex-accent-hover: #6a4bf0;
+  --ordex-accent-soft: rgba(124, 92, 255, 0.16);
+  --ordex-glow: rgba(124, 92, 255, 0.22);
+  --ordex-bg: #12101a;
+  --ordex-panel: #171420;
+  --ordex-panel-2: #1e1a2b;
+  --ordex-panel-3: #272135;
+  --ordex-text: #e8e5f2;
+  --ordex-muted: #a49cc0;
+  --ordex-faint: #6f688c;
+  --background: #12101a;
+  --foreground: #e8e5f2;
+  --card: #171420;
+  --card-foreground: #e8e5f2;
+  --popover: #1e1a2b;
+  --popover-foreground: #e8e5f2;
+  --primary: #7c5cff;
+  --primary-foreground: #ffffff;
+  --secondary: #272135;
+  --secondary-foreground: #e8e5f2;
+  --muted: #272135;
+  --muted-foreground: #a49cc0;
+  --accent: #272135;
+  --accent-foreground: #e8e5f2;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #7c5cff;
+}
+
+/* 4) Emerald Night */
+[data-theme="emerald"] {
+  --ordex-accent: #10b981;
+  --ordex-accent-hover: #0da271;
+  --ordex-accent-soft: rgba(16, 185, 129, 0.14);
+  --ordex-glow: rgba(16, 185, 129, 0.2);
+  --ordex-bg: #071410;
+  --ordex-panel: #0b1a15;
+  --ordex-panel-2: #10231c;
+  --ordex-panel-3: #163027;
+  --ordex-text: #e2efe9;
+  --ordex-muted: #93b3a7;
+  --ordex-faint: #5f7d72;
+  --background: #071410;
+  --foreground: #e2efe9;
+  --card: #0b1a15;
+  --card-foreground: #e2efe9;
+  --popover: #10231c;
+  --popover-foreground: #e2efe9;
+  --primary: #10b981;
+  --primary-foreground: #04120c;
+  --secondary: #163027;
+  --secondary-foreground: #e2efe9;
+  --muted: #163027;
+  --muted-foreground: #93b3a7;
+  --accent: #163027;
+  --accent-foreground: #e2efe9;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #10b981;
+}
+
+/* 5) Cyberpunk Neon (koyu mavi + neon sarı/pembe) */
+[data-theme="cyberpunk"] {
+  --ordex-accent: #fcee0a;
+  --ordex-accent-hover: #e6d600;
+  --ordex-accent-soft: rgba(252, 238, 10, 0.14);
+  --ordex-glow: rgba(255, 46, 196, 0.25);
+  --ordex-bg: #0a0f1e;
+  --ordex-panel: #0d1426;
+  --ordex-panel-2: #131c33;
+  --ordex-panel-3: #1a2745;
+  --ordex-text: #e6ecff;
+  --ordex-muted: #8fa0c5;
+  --ordex-faint: #5c6b8f;
+  --background: #0a0f1e;
+  --foreground: #e6ecff;
+  --card: #0d1426;
+  --card-foreground: #e6ecff;
+  --popover: #131c33;
+  --popover-foreground: #e6ecff;
+  --primary: #fcee0a;
+  --primary-foreground: #10131a;
+  --secondary: #1a2745;
+  --secondary-foreground: #e6ecff;
+  --muted: #1a2745;
+  --muted-foreground: #8fa0c5;
+  --accent: #1a2745;
+  --accent-foreground: #e6ecff;
+  --destructive: #ff2ec4;
+  --border: rgba(143, 160, 197, 0.2);
+  --input: rgba(143, 160, 197, 0.25);
+  --ring: #fcee0a;
+}
+
+/* 6) Crimson Velvet (koyu bordo + kırmızı parıltı) */
+[data-theme="crimson"] {
+  --ordex-accent: #ff3355;
+  --ordex-accent-hover: #d92043;
+  --ordex-accent-soft: rgba(255, 51, 85, 0.15);
+  --ordex-glow: rgba(255, 51, 85, 0.22);
+  --ordex-bg: #140a0e;
+  --ordex-panel: #1b0f14;
+  --ordex-panel-2: #241519;
+  --ordex-panel-3: #301c22;
+  --ordex-text: #f2e4e8;
+  --ordex-muted: #c096a2;
+  --ordex-faint: #84606c;
+  --background: #140a0e;
+  --foreground: #f2e4e8;
+  --card: #1b0f14;
+  --card-foreground: #f2e4e8;
+  --popover: #241519;
+  --popover-foreground: #f2e4e8;
+  --primary: #ff3355;
+  --primary-foreground: #ffffff;
+  --secondary: #301c22;
+  --secondary-foreground: #f2e4e8;
+  --muted: #301c22;
+  --muted-foreground: #c096a2;
+  --accent: #301c22;
+  --accent-foreground: #f2e4e8;
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: rgba(255, 255, 255, 0.09);
+  --input: rgba(255, 255, 255, 0.13);
+  --ring: #ff3355;
+}
+
+/* Compatibility alias: legacy .dark class maps to the default theme. */
 .dark {
-  --voice-green: oklch(0.72 0.19 150);
-  --voice-red: oklch(0.62 0.24 25);
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #0b0c0e;
+  --foreground: #e7e8ea;
+  --card: #131518;
+  --popover: #1a1d21;
+  --primary: #ff0000;
+  --primary-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #ff0000;
 }
 
 @layer base {
@@ -127,4 +290,45 @@
   [role="button"]:not([disabled]) {
     cursor: pointer;
   }
+}
+
+/* ÖRDEX surface utilities — theme-aware panels (replace hardcoded grays) */
+@layer utilities {
+  .ordex-panel {
+    background-color: var(--ordex-panel);
+    color: var(--ordex-text);
+  }
+  .ordex-panel-2 {
+    background-color: var(--ordex-panel-2);
+    color: var(--ordex-text);
+  }
+  .ordex-panel-3 {
+    background-color: var(--ordex-panel-3);
+    color: var(--ordex-text);
+  }
+  .ordex-bg {
+    background-color: var(--ordex-bg);
+    color: var(--ordex-text);
+  }
+  .ordex-accent-bg {
+    background-color: var(--ordex-accent);
+    color: var(--ordex-bg);
+  }
+  .ordex-accent-text {
+    color: var(--ordex-accent);
+  }
+}
+
+/* Fullscreen player: fill the whole screen, no letterboxing */
+:fullscreen .ordex-fs-stage {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
+}
+:fullscreen .ordex-fs-stage video,
+:fullscreen .ordex-fs-stage iframe {
+  width: 100%;
+  height: 100%;
 }

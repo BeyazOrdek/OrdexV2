@@ -30,16 +30,16 @@ export default function Landing() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
-      className="min-h-screen bg-[#0b0c0e] text-zinc-200"
+      className="ordex-bg min-h-screen"
     >
       {/* Nav */}
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#0b0c0e]/85 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-white/5 bg-[var(--ordex-bg)]/85 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-red-600 text-white">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--ordex-accent)] text-white">
               <Clapperboard className="size-4" />
             </span>
-            <span className="text-lg font-black tracking-tight text-white">Senkron</span>
+            <span className="text-lg font-black tracking-widest text-white">ÖRDEX</span>
           </div>
           <nav className="hidden items-center gap-6 text-sm text-zinc-400 md:flex">
             <a href="#ozellikler" className="transition-colors hover:text-white">Özellikler</a>
@@ -47,7 +47,7 @@ export default function Landing() {
           </nav>
           <Link
             to={appHref}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500"
+            className="rounded-lg bg-[var(--ordex-accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--ordex-accent-hover)]"
           >
             Odaya gir
           </Link>
@@ -55,22 +55,21 @@ export default function Landing() {
       </header>
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(600px 300px at 50% -50px, rgba(220,38,38,0.18), transparent 70%)",
-          }}
-        />
+      <section className="relative overflow-hidden">          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(600px 300px at 50% -50px, var(--ordex-glow), transparent 70%)",
+            }}
+          />
         <div className="relative mx-auto w-full max-w-6xl px-4 pb-16 pt-20 text-center">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400">
-            <Radio className="size-3.5" /> Senkron izleme + WebRTC sesli kanal
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--ordex-accent)]/30 bg-[var(--ordex-accent-soft)] px-3 py-1 text-xs font-medium text-[var(--ordex-accent)]">
+            <Radio className="size-3.5" /> ÖRDEX: senkron izleme + WebRTC sesli kanal
           </span>
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-black leading-tight tracking-tight text-white sm:text-6xl">
             Aynı anda izle.
             <br />
-            <span className="bg-gradient-to-r from-red-500 to-rose-400 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-[var(--ordex-accent)] to-[var(--ordex-accent-hover)] bg-clip-text text-transparent">
               Aynı anda konuş.
             </span>
           </h1>
@@ -81,7 +80,7 @@ export default function Landing() {
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
               to={appHref}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-6 text-sm font-bold text-white transition-colors hover:bg-red-500 sm:w-auto"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--ordex-accent)] px-6 text-sm font-bold text-white transition-colors hover:bg-[var(--ordex-accent-hover)] sm:w-auto"
             >
               <Play className="size-4" /> Ücretsiz başla
             </Link>
@@ -96,7 +95,7 @@ export default function Landing() {
           {/* Mock room */}
           <motion.div
             {...fadeIn}
-            className="mx-auto mt-14 max-w-4xl overflow-hidden rounded-xl border border-white/10 bg-[#131518] text-left shadow-2xl shadow-red-950/20"
+            className="ordex-panel mx-auto mt-14 max-w-4xl overflow-hidden rounded-xl border border-white/10 text-left shadow-2xl shadow-black/40"
           >
             <div className="flex h-72 sm:h-80">
               {/* left rail mock */}
@@ -114,20 +113,20 @@ export default function Landing() {
               {/* player mock */}
               <div className="relative min-w-0 flex-1 bg-black">
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                  <span className="flex size-12 items-center justify-center rounded-xl bg-red-600/15 text-red-500">
+                  <span className="flex size-12 items-center justify-center rounded-xl bg-[var(--ordex-accent-soft)] text-[var(--ordex-accent)]">
                     <MonitorPlay className="size-6" />
                   </span>
                   <p className="text-xs text-zinc-500">video herkeste aynı karede</p>
                 </div>
-                <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-[9px] font-bold uppercase text-white">
+                <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-[var(--ordex-accent)]/90 px-2 py-0.5 text-[9px] font-bold uppercase text-white">
                   <Radio className="size-2.5" /> senkron
                 </span>
                 <div className="absolute inset-x-0 bottom-0 border-t border-white/10 bg-[#131518] p-2">
                   <div className="h-1 w-full rounded bg-white/10">
-                    <div className="h-1 w-1/3 rounded bg-red-600" />
+                    <div className="h-1 w-1/3 rounded bg-[var(--ordex-accent)]" />
                   </div>
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="flex size-5 items-center justify-center rounded bg-red-600 text-white">
+                    <span className="flex size-5 items-center justify-center rounded bg-[var(--ordex-accent)] text-white">
                       <Play className="size-2.5" />
                     </span>
                     <div className="h-1.5 flex-1 rounded bg-black/40" />
@@ -201,9 +200,8 @@ export default function Landing() {
               title: "Herkese açık odalar",
               desc: "6 haneli kodla davet et ya da keşfet listesinden herkese açık odalara katıl.",
             },
-          ].map((f) => (
-            <motion.div key={f.title} {...fadeIn} className="rounded-xl border border-white/10 bg-[#131518] p-5">
-              <span className="flex size-10 items-center justify-center rounded-lg bg-red-600/15 text-red-500">
+          ].map((f) => (              <motion.div key={f.title} {...fadeIn} className="ordex-panel rounded-xl border border-white/10 p-5">
+              <span className="flex size-10 items-center justify-center rounded-lg bg-[var(--ordex-accent-soft)] text-[var(--ordex-accent)]">
                 <f.icon className="size-5" />
               </span>
               <h3 className="mt-3 text-sm font-bold text-white">{f.title}</h3>
@@ -214,7 +212,7 @@ export default function Landing() {
       </section>
 
       {/* How it works */}
-      <section id="nasil" className="border-y border-white/5 bg-[#101114] py-16">
+      <section id="nasil" className="ordex-panel border-y border-white/5 py-16">
         <div className="mx-auto w-full max-w-6xl px-4">
           <motion.h2 {...fadeIn} className="text-center text-2xl font-bold tracking-tight text-white sm:text-3xl">
             Üç adımda parti başlat
@@ -228,9 +226,9 @@ export default function Landing() {
               <motion.div
                 key={s.n}
                 {...fadeIn}
-                className="relative rounded-xl border border-white/10 bg-[#131518] p-6 text-center"
+                className="ordex-panel relative rounded-xl border border-white/10 p-6 text-center"
               >
-                <span className="absolute -top-3 left-1/2 flex size-7 -translate-x-1/2 items-center justify-center rounded-full bg-red-600 text-xs font-black text-white">
+                <span className="absolute -top-3 left-1/2 flex size-7 -translate-x-1/2 items-center justify-center rounded-full bg-[var(--ordex-accent)] text-xs font-black text-white">
                   {s.n}
                 </span>
                 <span className="mx-auto mt-2 flex size-11 items-center justify-center rounded-lg bg-white/5 text-zinc-200">
@@ -248,15 +246,14 @@ export default function Landing() {
       <section className="mx-auto w-full max-w-6xl px-4 py-20 text-center">
         <motion.div {...fadeIn}>
           <h2 className="text-2xl font-black tracking-tight text-white sm:text-4xl">
-            Kumandayı eline al.
+            Kumandayı ÖRDEX ile eline al.
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm text-zinc-400">
             Bugün izlenecek film oylaması yarın konuşulmaz — aynı anda izleyin, şimdi konuşun.
-          </p>
-          <Link
-            to={appHref}
-            className="mt-8 inline-flex h-12 items-center gap-2 rounded-lg bg-red-600 px-8 text-sm font-bold text-white transition-colors hover:bg-red-500"
-          >
+          </p>            <Link
+              to={appHref}
+              className="mt-8 inline-flex h-12 items-center gap-2 rounded-lg bg-[var(--ordex-accent)] px-8 text-sm font-bold text-white transition-colors hover:bg-[var(--ordex-accent-hover)]"
+            >
             <Play className="size-4" /> Odaya gir
           </Link>
         </motion.div>
@@ -266,12 +263,12 @@ export default function Landing() {
       <footer className="border-t border-white/5 py-8">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <span className="flex size-6 items-center justify-center rounded-md bg-red-600 text-white">
+            <span className="flex size-6 items-center justify-center rounded-md bg-[var(--ordex-accent)] text-white">
               <Clapperboard className="size-3.5" />
             </span>
-            <span className="text-xs font-bold text-zinc-300">Senkron</span>
+            <span className="text-xs font-black tracking-widest text-zinc-300">ÖRDEX</span>
           </div>
-          <p className="text-xs text-zinc-600">Birlikte izleme · WebRTC · YouTube Senkron</p>
+          <p className="text-xs text-zinc-600">ÖRDEX · Birlikte izleme · WebRTC · YouTube Senkron</p>
         </div>
       </footer>
     </motion.div>

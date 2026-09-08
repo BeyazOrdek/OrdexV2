@@ -138,11 +138,17 @@ function RoomView({
     void advanceQueue({ roomId, finishedVideoId: sync.currentVideoId }).catch(() => undefined);
   }, [roomId, advanceQueue, sync.currentVideoId]);
 
+  // Cinema mode: hide both side panels so the video fills the screen.
+  const [cinema, setCinema] = useState(false);
+  const toggleCinema = useCallback(() => setCinema((v) => !v), []);
+
   return (
     <main className="flex h-screen overflow-hidden bg-background text-foreground">
-      <div className="hidden w-60 shrink-0 md:block">
-        <LeftPanel activeCode={roomCode} />
-      </div>
+      {!cinema && (
+        <div className="hidden w-60 shrink-0 md:block">
+          <LeftPanel activeCode={roomCode} />
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <MediaPanel
           roomName={roomName}
@@ -152,29 +158,33 @@ function RoomView({
           onNext={skipToNext}
           localStream={voice.localStream}
           camOn={voice.camOn}
+          cinemaMode={cinema}
+          onToggleCinema={toggleCinema}
         />
       </div>
-      <div className="flex w-80 shrink-0 flex-col border-l border-white/5">
-        <div className="min-h-0 flex-[3] border-b border-white/5">
-          <ChatPanel roomId={roomId} />
+      {!cinema && (
+        <div className="flex w-80 shrink-0 flex-col border-l border-white/5">
+          <div className="min-h-0 flex-[3] border-b border-white/5">
+            <ChatPanel roomId={roomId} />
+          </div>
+          <div className="min-h-0 flex-[4]">
+            <RightPanel
+              roomId={roomId}
+              sessionId={sessionId}
+              participants={presence.participants}
+              voiceParticipants={voice.participants}
+              inVoice={voice.inVoice}
+              micOn={voice.micOn}
+              camOn={voice.camOn}
+              voiceError={voice.error}
+              onJoinVoice={() => void voice.join()}
+              onLeaveVoice={voice.leave}
+              onToggleMic={voice.toggleMic}
+              onToggleCam={voice.toggleCam}
+            />
+          </div>
         </div>
-        <div className="min-h-0 flex-[4]">
-          <RightPanel
-            roomId={roomId}
-            sessionId={sessionId}
-            participants={presence.participants}
-            voiceParticipants={voice.participants}
-            inVoice={voice.inVoice}
-            micOn={voice.micOn}
-            camOn={voice.camOn}
-            voiceError={voice.error}
-            onJoinVoice={() => void voice.join()}
-            onLeaveVoice={voice.leave}
-            onToggleMic={voice.toggleMic}
-            onToggleCam={voice.toggleCam}
-          />
-        </div>
-      </div>
+      )}
     </main>
   );
 }

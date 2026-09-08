@@ -30,6 +30,10 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
 
       role: v.optional(roleValidator), // role of the user. do not remove
+
+      // ÖRDEX profile extensions
+      statusMessage: v.optional(v.string()),
+      avatarUrl: v.optional(v.string()), // custom avatar image or Tenor GIF url
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
     // add other tables here
@@ -40,6 +44,8 @@ const schema = defineSchema(
       createdByUserId: v.id("users"),
       createdByName: v.string(),
       createdAt: v.number(),
+      // "public" (default for legacy rows) filtering, join by code/link only when "secret"
+      visibility: v.optional(v.union(v.literal("public"), v.literal("secret"))),
       // synchronized playback state (YouTube IFrame or direct HTML5 video)
       // currentVideoId is the media key: YouTube video id, or the full URL for direct files
       currentVideoId: v.optional(v.string()),
@@ -122,6 +128,26 @@ const schema = defineSchema(
     //   ...
     //   // table fields
     // }).index("by_field", ["field"])
+
+    // ÖRDEX social layer
+    friendships: defineTable({
+      userId: v.id("users"), // one direction; accepted friendships stored twice (a→b, b→a)
+      friendId: v.id("users"),
+      status: v.union(v.literal("pending"), v.literal("accepted")),
+      requestedBy: v.id("users"),
+      createdAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_pair", ["userId", "friendId"]),
+
+    dms: defineTable({
+      senderId: v.id("users"),
+      recipientId: v.id("users"),
+      text: v.optional(v.string()),
+      gifUrl: v.optional(v.string()),
+      gifThumb: v.optional(v.string()),
+      createdAt: v.number(),
+    }).index("by_pair", ["senderId", "recipientId"]),
   },
   {
     schemaValidation: false,

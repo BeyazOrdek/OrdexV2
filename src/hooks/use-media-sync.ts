@@ -224,6 +224,11 @@ export function useMediaSync({
             modestbranding: 1,
             rel: 0,
             playsinline: 1,
+            // Auto-captions (e.g. the "[Müzik]" auto subs) must NEVER appear.
+            cc_load_policy: 0,
+            cc_lang_pref: "tr",
+            iv_load_policy: 3, // no video annotations
+            hl: "tr",
             origin: window.location.origin,
           },
           events: {

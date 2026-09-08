@@ -2,10 +2,16 @@ import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import { avatarHue, initials } from "@/lib/utils-room";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Image as ImageIcon, Loader2, Search, Send, SmilePlus, X } from "lucide-react";
+import { Image as ImageIcon, Loader2, Search, Send, SmilePlus, UserPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 const QUICK_EMOJIS = ["👍", "😂", "❤️", "🔥", "😮", "😢", "🎉", "👀"];
 
@@ -45,6 +51,13 @@ export function ChatPanel({ roomId }: { roomId: string }) {
   const sendMessage = useMutation(api.chat.sendMessage);
   const toggleReaction = useMutation(api.chat.toggleReaction);
   const searchGifs = useAction(api.tenor.searchGifs);
+  const sendFriendRequest = useMutation(api.social.sendFriendRequest);
+
+  const addFriendByName = (name: string) => {
+    void sendFriendRequest({ name })
+      .then(() => toast.success(`${name} kullanıcısına arkadaşlık isteği gönderildi.`))
+      .catch((err) => toast.error(err instanceof Error ? err.message : "İstek gönderilemedi."));
+  };
 
   const [text, setText] = useState("");
   const [showGifs, setShowGifs] = useState(false);
@@ -95,7 +108,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
   }
 
   return (
-    <section className="flex h-full min-h-0 w-full flex-col bg-[#131518] text-zinc-200">
+    <section className="ordex-panel flex h-full min-h-0 w-full flex-col text-zinc-200">
       {/* Messages */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
         {messages.length === 0 && (
@@ -116,9 +129,37 @@ export function ChatPanel({ roomId }: { roomId: string }) {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="truncate text-xs font-semibold text-zinc-100">
-                    {m.userName}
-                  </span>
+                  {mine ? (
+                    <span className="truncate text-xs font-semibold text-zinc-100">
+                      {m.userName}
+                    </span>
+                  ) : (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          className="truncate text-xs font-semibold text-zinc-100 hover:underline"
+                          title="Arkadaş ekle"
+                        >
+                          {m.userName}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="ordex-panel-2 w-56 border-white/10 p-2">
+                        <p className="px-1 pb-2 text-[11px] text-zinc-500">
+                          {m.userName} için işlem seç:
+                        </p>
+                        <Button
+                          size="sm"
+                          className="h-8 w-full justify-start gap-2 bg-[var(--ordex-accent)] text-xs text-white hover:bg-[var(--ordex-accent-hover)]"
+                          onClick={() => addFriendByName(m.userName)}
+                        >
+                          <UserPlus className="size-3.5" /> Arkadaş olarak ekle
+                        </Button>
+                        <p className="px-1 pt-1.5 text-[10px] text-zinc-600">
+                          DM için sol paneldeki "Arkadaşlar" sekmesini kullan.
+                        </p>
+                      </PopoverContent>
+                    </Popover>
+                  )}
                   <span className="shrink-0 text-[10px] text-zinc-600">
                     {new Date(m.createdAt).toLocaleTimeString("tr-TR", {
                       hour: "2-digit",

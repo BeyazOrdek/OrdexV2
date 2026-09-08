@@ -3,45 +3,37 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { avatarHue, initials } from "@/lib/utils-room";
 import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import {
   ArrowRight,
   Clapperboard,
   Globe2,
   LogOut,
-  Plus,
+  Settings,
   Users,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { CreateRoomModal } from "@/components/CreateRoomModal";
+import { ProfileModal } from "@/components/ProfileModal";
+import { SettingsModal } from "@/components/SettingsModal";
+import { useTheme, type ThemeId } from "@/lib/theme";
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [code, setCode] = useState("");
-  const [roomName, setRoomName] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   const myRooms = useQuery(api.rooms.listMyRooms, {}) ?? [];
   const publicRooms = useQuery(api.rooms.listPublicRooms, {}) ?? [];
-  const createRoom = useMutation(api.rooms.createRoom);
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/");
-  };
-
-  const goCreate = async () => {
-    setCreating(true);
-    try {
-      const result = await createRoom({
-        name: roomName.trim() || `${user?.name ?? "Misafir"}'in odası`,
-      });
-      navigate(`/room/${result.code}`);
-    } catch (err) {
-      console.error(err);
-      setCreating(false);
-    }
   };
 
   const goJoin = () => {
@@ -50,32 +42,53 @@ export default function Dashboard() {
   };
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="ordex-bg min-h-screen">
       {/* Top bar */}
-      <header className="border-b border-border/60 bg-[#131518]">
+      <header className="ordex-panel border-b border-white/5">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <span className="flex size-7 items-center justify-center rounded-md bg-red-600 text-white">
+            <span className="flex size-7 items-center justify-center rounded-md bg-[var(--ordex-accent)] text-white">
               <Clapperboard className="size-4" />
             </span>
-            <span className="text-sm font-bold tracking-tight text-white">
-              Senkron
-            </span>
+            <span className="text-sm font-black tracking-widest text-white">ÖRDEX</span>
           </div>
           <div className="flex items-center gap-3">
-            <span
-              className="flex size-8 items-center justify-center rounded-full text-xs font-bold text-white"
-              style={{ background: `hsl(${avatarHue(user?._id ?? "x")} 65% 45%)` }}
+            <button
+              onClick={() => setProfileOpen(true)}
+              className="flex items-center gap-2 rounded-full p-1 pr-2 transition-colors hover:bg-white/5"
+              title="Profili düzenle"
             >
-              {initials(user?.name ?? "Misafir")}
-            </span>
-            <span className="hidden text-sm text-zinc-300 sm:block">
-              {user?.name ?? "Misafir"}
-            </span>
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.name ?? "Avatar"}
+                  className="size-8 rounded-full border border-white/15 object-cover"
+                />
+              ) : (
+                <span
+                  className="flex size-8 items-center justify-center rounded-full text-xs font-bold text-white"
+                  style={{ background: `hsl(${avatarHue(user?._id ?? "x")} 65% 45%)` }}
+                >
+                  {initials(user?.name ?? "Misafir")}
+                </span>
+              )}
+              <span className="hidden text-sm text-zinc-300 sm:block">
+                {user?.name ?? "Misafir"}
+              </span>
+            </button>
             <Button
               size="icon"
               variant="ghost"
               className="size-8 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+              title="Ayarlar ve tema"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <Settings className="size-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8 text-zinc-400 hover:bg-white/10 hover:text-red-400"
               title="Çıkış"
               onClick={() => void handleSignOut()}
             >
@@ -89,36 +102,30 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
           Birlikte izle, birlikte konuş.
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="mt-1 text-sm text-[var(--ordex-muted)]">
           Oda kur, kodla davet et, sesli kanala bağlan — video herkes için senkron akar.
         </p>
 
         {/* Create + join */}
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-border/60 bg-[#1a1d21] p-4">
+          <div className="ordex-panel-2 rounded-xl border border-white/5 p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <Plus className="size-4 text-red-500" /> Yeni oda oluştur
+              <ArrowRight className="size-4 text-[var(--ordex-accent)]" /> Oda kur
             </div>
-            <Input
-              value={roomName}
-              onChange={(e) => setRoomName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !creating && void goCreate()}
-              placeholder="Oda adı (örn. Film Gecesi)"
-              maxLength={60}
-              className="mt-3 h-10 border-white/10 bg-black/30 text-sm placeholder:text-zinc-600 focus-visible:ring-red-500/40"
-            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Herkese açık ya da gizli (davet kodlu) oda oluştur.
+            </p>
             <Button
-              onClick={() => void goCreate()}
-              disabled={creating}
-              className="mt-3 h-10 w-full gap-2 bg-red-600 text-white hover:bg-red-500"
+              onClick={() => setCreateOpen(true)}
+              className="mt-3 h-10 w-full gap-2 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)]"
             >
-              Odayı kur <ArrowRight className="size-4" />
+              Oda oluştur
             </Button>
           </div>
 
-          <div className="rounded-xl border border-border/60 bg-[#1a1d21] p-4">
+          <div className="ordex-panel-2 rounded-xl border border-white/5 p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <Users className="size-4 text-red-500" /> Kodla katıl
+              <Users className="size-4 text-[var(--ordex-accent)]" /> Kodla katıl
             </div>
             <Input
               value={code}
@@ -126,7 +133,7 @@ export default function Dashboard() {
               onKeyDown={(e) => e.key === "Enter" && goJoin()}
               placeholder="6 haneli oda kodu"
               maxLength={6}
-              className="mt-3 h-10 border-white/10 bg-black/30 font-mono text-sm uppercase tracking-[0.3em] placeholder:font-sans placeholder:tracking-normal placeholder:text-zinc-600 focus-visible:ring-red-500/40"
+              className="mt-3 h-10 border-white/10 bg-black/30 font-mono text-sm uppercase tracking-[0.3em] placeholder:font-sans placeholder:tracking-normal placeholder:text-zinc-600 focus-visible:ring-[var(--ordex-accent)]/40"
             />
             <Button
               onClick={goJoin}
@@ -156,10 +163,10 @@ export default function Dashboard() {
                     <button
                       key={room._id}
                       onClick={() => navigate(`/room/${room.code}`)}
-                      className="group rounded-xl border border-border/60 bg-[#1a1d21] p-4 text-left transition-colors hover:border-red-500/40 hover:bg-[#1f2227]"
+                      className="ordex-panel-2 group rounded-xl border border-white/5 p-4 text-left transition-colors hover:border-[var(--ordex-accent)]/40 hover:bg-[var(--ordex-panel-3)]"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="flex size-8 items-center justify-center rounded-md bg-red-600/15 text-red-400">
+                        <span className="flex size-8 items-center justify-center rounded-md bg-[var(--ordex-accent-soft)] text-[var(--ordex-accent)]">
                           <Clapperboard className="size-4" />
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
@@ -170,7 +177,7 @@ export default function Dashboard() {
                         <span className="rounded bg-black/40 px-2 py-0.5 font-mono text-[11px] tracking-widest text-zinc-400">
                           {room.code}
                         </span>
-                        <span className="text-xs text-zinc-500 transition-colors group-hover:text-red-400">
+                        <span className="text-xs text-zinc-500 transition-colors group-hover:text-[var(--ordex-accent)]">
                           Katıl →
                         </span>
                       </div>
@@ -194,7 +201,7 @@ export default function Dashboard() {
                 <button
                   key={room._id}
                   onClick={() => navigate(`/room/${room.code}`)}
-                  className="group rounded-xl border border-border/60 bg-[#1a1d21] p-4 text-left transition-colors hover:border-red-500/40 hover:bg-[#1f2227]"
+                  className="ordex-panel-2 group rounded-xl border border-white/5 p-4 text-left transition-colors hover:border-[var(--ordex-accent)]/40 hover:bg-[var(--ordex-panel-3)]"
                 >
                   <div className="flex items-center gap-2">
                     <span className="flex size-8 items-center justify-center rounded-md bg-white/5 text-zinc-300">
@@ -208,7 +215,7 @@ export default function Dashboard() {
                     <span className="rounded bg-black/40 px-2 py-0.5 font-mono text-[11px] tracking-widest text-zinc-400">
                       {room.code}
                     </span>
-                    <span className="text-xs text-zinc-500 transition-colors group-hover:text-red-400">
+                    <span className="text-xs text-zinc-500 transition-colors group-hover:text-[var(--ordex-accent)]">
                       Katıl →
                     </span>
                   </div>
@@ -218,6 +225,10 @@ export default function Dashboard() {
           )}
         </section>
       </div>
+
+      <CreateRoomModal open={createOpen} onOpenChange={setCreateOpen} />
+      <ProfileModal open={profileOpen} onOpenChange={setProfileOpen} />
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} theme={theme} onThemeChange={setTheme} />
     </main>
   );
 }

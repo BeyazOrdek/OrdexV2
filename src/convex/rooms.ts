@@ -4,6 +4,12 @@ import { mutation, query } from "./_generated/server";
 
 const mediaTypeValidator = v.union(v.literal("youtube"), v.literal("direct"));
 
+/**
+ * Secret rooms never appear in any public listing; they are joinable only via
+ * their 6-char code or direct link. Kept as a constant so query + mutations agree.
+ */
+const SECRET_VISIBILITY = "secret" as const;
+
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function generateRoomCode(): string {
@@ -56,14 +62,17 @@ export const listMyRooms = query({
 export const listPublicRooms = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("rooms").order("desc").take(20);
+    // Privacy filter: secret rooms are NEVER listed here (requirement #2).
+    return (await ctx.db.query("rooms").order("desc").take(30))
+      .filter((r) => (r.visibility ?? "public") !== SECRET_VISIBILITY)
+      .slice(0, 20);
   },
 });
 
 // ---------- Room lifecycle ----------
 
 export const createRoom = mutation({
-  args: { name: v.string() },
+  args: { name: v.string(), visibility: v.optional(v.union(v.literal("public"), v.literal("secret"))) },
   handler: async (ctx, args) => {
     const userId = await requireUser(ctx);
     const user = await ctx.db.get(userId);
@@ -83,6 +92,7 @@ export const createRoom = mutation({
       createdByUserId: userId,
       createdByName: user?.name ?? "Misafir",
       createdAt: Date.now(),
+      visibility: args.visibility ?? "public",
       isPlaying: false,
       positionSec: 0,
       mediaUpdatedAt: Date.now(),

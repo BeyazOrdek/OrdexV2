@@ -1,7 +1,21 @@
 import type { MediaSync } from "@/hooks/use-media-sync";
 import { cn } from "@/lib/utils";
 import { formatTime, parseMediaLink, type ParsedMediaLink } from "@/lib/utils-room";
-import { Link2, Loader2, MonitorPlay, Pause, Play, Radio, SkipForward, Volume2, VolumeX } from "lucide-react";
+import {
+  Link2,
+  Loader2,
+  Maximize,
+  Minimize,
+  MonitorPlay,
+  PanelLeftClose,
+  PanelRightClose,
+  Pause,
+  Play,
+  Radio,
+  SkipForward,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +29,8 @@ interface MediaPanelProps {
   onNext: () => void;
   localStream: MediaStream | null;
   camOn: boolean;
+  cinemaMode: boolean;
+  onToggleCinema: () => void;
 }
 
 export function MediaPanel({
@@ -25,11 +41,34 @@ export function MediaPanel({
   onNext,
   localStream,
   camOn,
+  cinemaMode,
+  onToggleCinema,
 }: MediaPanelProps) {
   const [link, setLink] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const parsed = link.trim() ? parseMediaLink(link) : null;
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
+  // Fullscreen state sync (e.g. user exits with Esc).
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    } else {
+      void stage.requestFullscreen().catch(() =>
+        setLinkError("Tam ekran isteği reddedildi."),
+      );
+    }
+  };
 
   // Attach the local camera preview.
   useEffect(() => {
@@ -64,9 +103,12 @@ export function MediaPanel({
   const isDirect = sync.mediaType === "direct";
 
   return (
-    <section className="flex h-full min-h-0 w-full flex-col bg-[#0b0c0e]">
+    <section className="ordex-bg flex h-full min-h-0 w-full flex-col">
       {/* Player area */}
-      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black">
+      <div
+        ref={stageRef}
+        className="ordex-fs-stage relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black"
+      >
         <div className="relative aspect-video max-h-full w-full max-w-full">
           {/* YouTube host — always mounted; the YT API replaces this node with the iframe on init. */}
           <div
@@ -101,14 +143,14 @@ export function MediaPanel({
             </div>
           )}
 
-        {/* Local camera preview (self view) */}
+        {/* Local camera preview (self view) — offset below the overlay buttons */}
         {localStream && (
           <video
             ref={videoPreviewRef}
             muted
             playsInline
             className={cn(
-              "absolute right-3 top-3 z-10 h-24 w-32 rounded-md border border-white/20 bg-black object-cover shadow-lg",
+              "absolute right-3 top-14 z-10 h-24 w-32 rounded-md border border-white/20 bg-black object-cover shadow-lg",
               !camOn && "hidden",
             )}
           />
@@ -116,14 +158,36 @@ export function MediaPanel({
 
         {/* Live badge */}
         {sync.hasVideo && sync.playing && (
-          <span className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+          <span className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-full bg-[var(--ordex-accent)]/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
             <Radio className="size-3" /> Senkron
           </span>
         )}
+
+        {/* Stage overlay buttons: cinema toggles + fullscreen */}
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5">
+          <Button
+            size="icon"
+            variant="secondary"
+            className="size-8 bg-black/60 text-zinc-300 backdrop-blur hover:bg-black/80"
+            title={cinemaMode ? "Panelleri göster" : "Sinema modu (panelleri gizle)"}
+            onClick={onToggleCinema}
+          >
+            {cinemaMode ? <PanelRightClose className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </Button>
+          <Button
+            size="icon"
+            variant="secondary"
+            className="size-8 bg-black/60 text-zinc-300 backdrop-blur hover:bg-black/80"
+            title={isFullscreen ? "Tam ekrandan çık" : "Tam ekran"}
+            onClick={toggleFullscreen}
+          >
+            {isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />}
+          </Button>
+        </div>
       </div>
 
       {/* Custom media bar */}
-      <div className="border-t border-white/5 bg-[#131518] px-3 py-2">
+      <div className="ordex-panel border-t border-white/5 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="w-11 shrink-0 text-right font-mono text-[10px] text-zinc-500">
             {formatTime(sync.currentTime)}
@@ -134,7 +198,7 @@ export function MediaPanel({
             step={1}
             onValueChange={([v]) => sync.seek(v)}
             disabled={!sync.hasVideo || !sync.ready}
-            className="min-w-0 flex-1 cursor-pointer [&_[data-slot=slider-range]]:bg-red-600 [&_[data-slot=slider-thumb]]:border-red-600"
+            className="min-w-0 flex-1 cursor-pointer [&_[data-slot=slider-range]]:bg-[var(--ordex-accent)] [&_[data-slot=slider-thumb]]:border-[var(--ordex-accent)]"
           />
           <span className="w-11 shrink-0 font-mono text-[10px] text-zinc-500">
             {formatTime(sync.duration)}
@@ -144,7 +208,7 @@ export function MediaPanel({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <Button
             size="icon"
-            className="size-9 shrink-0 bg-red-600 text-white hover:bg-red-500 disabled:opacity-40"
+            className="size-9 shrink-0 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)] disabled:opacity-40"
             title={sync.playing ? "Duraklat" : "Oynat"}
             disabled={!sync.hasVideo || !sync.ready}
             onClick={() => (sync.playing ? sync.pause() : sync.play())}
@@ -186,7 +250,7 @@ export function MediaPanel({
                 onChange={(e) => setLink(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder="YouTube veya mp4/tau-video linki gir..."
-                className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-red-500/40"
+                className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-[var(--ordex-accent)]/40"
               />
             </div>
             <Button
@@ -194,7 +258,7 @@ export function MediaPanel({
               onClick={submit}
               disabled={!link.trim()}
               className={cn(
-                "h-9 shrink-0 bg-red-600 px-3 text-xs text-white hover:bg-red-500",
+                "h-9 shrink-0 bg-[var(--ordex-accent)] px-3 text-xs text-white hover:bg-[var(--ordex-accent-hover)]",
                 parsed && "bg-emerald-600 hover:bg-emerald-500",
               )}
               title={parsed ? (parsed.type === "youtube" ? "YouTube olarak oynat" : "Doğrudan video olarak oynat") : undefined}

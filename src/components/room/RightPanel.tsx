@@ -80,7 +80,7 @@ export function RightPanel({
   };
 
   return (
-    <aside className="flex h-full w-full flex-col bg-[#131518] text-zinc-200">
+    <aside className="ordex-panel flex h-full w-full flex-col text-zinc-200">
       {/* Video request list */}
       <div className="border-b border-white/5 p-3">
         <p className="flex items-center gap-1.5 pb-2 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
@@ -93,14 +93,13 @@ export function RightPanel({
               value={link}
               onChange={(e) => setLink(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submitLink()}
-              placeholder="YouTube veya mp4 linki yapıştır..."
-              className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-red-500/40"
+              placeholder="YouTube veya mp4 linki yapıştır..."                className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-[var(--ordex-accent)]/40"
             />
           </div>
           <Button
             size="sm"
             onClick={submitLink}
-            className="h-9 shrink-0 bg-red-600 px-3 text-white hover:bg-red-500"
+            className="h-9 shrink-0 bg-[var(--ordex-accent)] px-3 text-white hover:bg-[var(--ordex-accent-hover)]"
           >
             Ekle
           </Button>
@@ -263,7 +262,7 @@ export function RightPanel({
         ) : (
           <Button
             onClick={onJoinVoice}
-            className="h-9 w-full gap-2 bg-emerald-600 text-xs text-white hover:bg-emerald-500"
+            className="h-9 w-full gap-2 bg-[var(--ordex-accent)] text-xs text-white hover:bg-[var(--ordex-accent-hover)]"
           >
             <Headphones className="size-4" /> Sesli kanala katıl
           </Button>
