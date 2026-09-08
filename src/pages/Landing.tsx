@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/use-auth";
 import {
   Clapperboard,
+  Gamepad2,
   Headphones,
   ListVideo,
   Link2,
@@ -74,8 +75,8 @@ export default function Landing() {
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-zinc-400">
-            YouTube videolarını saniye saniye senkron oynat, WebRTC sesli kanalda sohbet et,
-            canlı chat'te tepki ver ve GIF gönder — hepsi tek odada.
+            YouTube & MP4 videolarını saniye saniye senkron oynat, WebRTC sesli kanalda sohbet et,
+            oyun yayını paylaş, arkadaşlarınla DMleş — hepsi tek odada, mobilde de tam uyumlu.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
@@ -162,10 +163,10 @@ export default function Landing() {
       <section id="ozellikler" className="mx-auto w-full max-w-6xl px-4 py-16">
         <motion.div {...fadeIn}>
           <h2 className="text-center text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            İzleme partisi için her şey
+            Parti için her şey tek platformda
           </h2>
           <p className="mx-auto mt-2 max-w-lg text-center text-sm text-zinc-500">
-            Version 1 tam olarak şunu yapar: birlikte izleme ve birlikte konuşma. Fazlası yok, eksiği yok.
+            Sinema odaları, oyun yayınları, arkadaşlar ve profiller — ÖRDEX tümünü tek çatı altında toplar.
           </p>
         </motion.div>
         <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -192,13 +193,28 @@ export default function Landing() {
             },
             {
               icon: Link2,
-              title: "Direkt link oynatma",
-              desc: "watch, youtu.be ve shorts linklerini yapıştır — oda herkeste başlatır.",
+              title: "MP4 & tau-video desteği",
+              desc: "watch, youtu.be, shorts ve doğrudan mp4/webm linkleri — hepsi aynı oynatıcıda.",
+            },
+            {
+              icon: Gamepad2,
+              title: "Oyun odası & ekran paylaşımı",
+              desc: "Tek tıkla ekranını yayınla; herkes tam ekran büyüterek izlesin.",
             },
             {
               icon: Users,
-              title: "Herkese açık odalar",
-              desc: "6 haneli kodla davet et ya da keşfet listesinden herkese açık odalara katıl.",
+              title: "Hesap veya misafir",
+              desc: "Saniyede Guest kimliğiyle gir ya da kullanıcı adı + şifreyle kalıcı hesap aç.",
+            },
+            {
+              icon: SmilePlus,
+              title: "Arkadaşlar & DM",
+              desc: "Kullanıcı ara, arkadaşlık isteği gönder, birebir özel mesajlaş.",
+            },
+            {
+              icon: MonitorPlay,
+              title: "Kişisel profil",
+              desc: "Avatar, banner, rozetler, durum mesajı ve sohbet isim rengi — tamamen senin.",
             },
           ].map((f) => (              <motion.div key={f.title} {...fadeIn} className="ordex-panel rounded-xl border border-white/10 p-5">
               <span className="flex size-10 items-center justify-center rounded-lg bg-[var(--ordex-accent-soft)] text-[var(--ordex-accent)]">
