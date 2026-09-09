@@ -128,8 +128,6 @@ function RoomView({
 
   // Dedicated host nodes for the media layers (kept out of the sync object so
   // consumers never read refs during render).
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const ytHostRef = useRef<HTMLDivElement | null>(null);
   const syncVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const presence = useRoomPresence({
@@ -155,10 +153,9 @@ function RoomView({
     roomId: roomId as Id<"rooms">,
     sessionId,
     onEnded: () => undefined,
-    stageRef,
-    ytHostRef,
     videoRef: syncVideoRef,
   });
+  const ytHostRef = sync.ytHostRef;
   const advanceQueue = useMutation(api.rooms.advanceQueue);
   const addToQueue = useMutation(api.rooms.addToQueue);
 
@@ -280,7 +277,6 @@ function RoomView({
                 roomName={roomName}
                 roomCode={roomCode}
                 sync={sync}
-                stageRef={stageRef}
                 ytHostRef={ytHostRef}
                 videoRef={syncVideoRef}
                 onAddLink={addLink}
@@ -336,7 +332,6 @@ function RoomView({
             roomName={roomName}
             roomCode={roomCode}
             sync={sync}
-            stageRef={stageRef}
             ytHostRef={ytHostRef}
             videoRef={syncVideoRef}
             onAddLink={addLink}

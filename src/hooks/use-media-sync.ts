@@ -101,19 +101,17 @@ export interface UseMediaSyncOptions {
   roomId: Id<"rooms">;
   sessionId: string;
   onEnded: (mediaKey: string) => void;
-  /** React wrapper div that permanently hosts the YouTube iframe. */
-  stageRef: RefObject<HTMLDivElement | null>;
-  /**
-   * Disposable inner host node the YT iframe mounts into. React never owns
-   * this node; teardown deletes it explicitly. Optional fallback: when not
-   * provided the player mounts into stageRef's node as before.
-   */
-  ytHostRef?: RefObject<HTMLDivElement | null>;
   /** HTML5 <video> element for direct files (always mounted). */
   videoRef: RefObject<HTMLVideoElement | null>;
 }
 
 export interface MediaSync {
+  /**
+   * Callback ref for the disposable YouTube host div. The player (re)mounts
+   * whenever the host node attaches — tab switches and panel toggles safe.
+   * React owns the div itself; only its children are managed externally.
+   */
+  ytHostRef: (node: HTMLDivElement | null) => void;
   mediaType: MediaType | null;
   ready: boolean;
   playing: boolean;
@@ -190,8 +188,6 @@ export function useMediaSync({
   roomId,
   sessionId,
   onEnded,
-  stageRef,
-  ytHostRef: ytHostRefOption,
   videoRef,
 }: UseMediaSyncOptions): MediaSync {
   const setMedia = useMutation(api.rooms.setMedia);
@@ -204,18 +200,22 @@ export function useMediaSync({
     : null;
 
   const playerRef = useRef<YTPlayer | null>(null);
+  /** Disposable host node — set via ytHostRef callback ref, cleared on unmount. */
+  const ytHostRefInternal = useRef<HTMLDivElement | null>(null);
   /**
-   * Disposable node the YT iframe mounts into. React never owns this node:
-   * the YT API replaces it with the iframe, and our teardown deletes it
-   * explicitly. Kept in a ref (not read during render) so MediaPanel can
-   * position the player inside its 16:9 host instead of as a bare sibling.
+   * Bumped whenever the host node attaches/detaches. The player-lifecycle
+   * effect depends on this counter instead of running once, so the player
+   * correctly (re)mounts after tab switches / panel toggles — and teardown
+   * always runs against a node that is currently in the document.
    */
-  const ytHostRef = useRef<HTMLDivElement | null>(null);
-  // Local ref + mirrored option ref: callers may pass their own host ref.
-  const ytHostOptionRef = useRef<RefObject<HTMLDivElement | null> | null>(null);
-  useEffect(() => {
-    ytHostOptionRef.current = ytHostRefOption ?? null;
-  }, [ytHostRefOption]);
+  const [ytHostVersion, setYtHostVersion] = useState(0);
+  const ytHostRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      ytHostRefInternal.current = node;
+      setYtHostVersion((v) => v + 1);
+    },
+    [],
+  );
   const ytReadyRef = useRef(false);
   const applyingRef = useRef(false); // true while applying a remote change (don't echo back)
   const ytAppliedRef = useRef("");
@@ -264,27 +264,26 @@ export function useMediaSync({
     mediaKeyRef.current = state?.currentVideoId;
   }, [state?.currentVideoId]);
 
-  // ---- YouTube player lifecycle ----
+  // ---- YouTube player lifecycle (host-driven: (re)mounts with the host node) ----
   useEffect(() => {
+    // Reading the counter keeps this effect subscribed to host attach/detach.
+    void ytHostVersion;
     let cancelled = false;
     let player: YTPlayer | null = null;
-    // Capture the wrapper node once: the ref object is stable, but by cleanup
-    // time a re-render may have repointed it; teardown must clean THIS mount.
-    const stage = stageRef.current;
+    let mountNode: HTMLDivElement | null = null;
     loadYouTubeApi()
       .then((YT) => {
-        // The dedicated 16:9 host inside the stage (falls back to the stage
-        // itself if MediaPanel hasn't wired ytHostRef yet).
-        const host = ytHostOptionRef.current?.current ?? ytHostRef.current ?? stage;
+        const host = ytHostRefInternal.current;
         if (cancelled || !host) return;
         // NEVER hand a React-managed node to the YT API: it *replaces* that
         // node with the iframe, which corrupts React's virtual DOM and makes
         // the next commit crash with "insertBefore ... not a child of this
         // node". Instead we create a disposable inner node that React knows
-        // nothing about; the React-owned wrapper stays mounted forever.
+        // nothing about; the React-owned host div stays mounted forever.
         const mount = document.createElement("div");
         mount.className = "size-full";
         host.appendChild(mount);
+        mountNode = mount;
         player = new YT.Player(mount, {
           videoId: "",
           playerVars: {
@@ -358,22 +357,15 @@ export function useMediaSync({
       }
       playerRef.current = null;
       ytReadyRef.current = false;
-      // Remove only the nodes THIS effect created. replaceChildren() on the
-      // stage would also wipe React-managed siblings (camera preview, empty
-      // state, overlays) — in StrictMode's mount→cleanup→mount cycle that
-      // detaches live DOM nodes React still tracks, and the next conditional
-      // insert throws "insertBefore ... not a child of this node".
+      // Remove ONLY the disposable mount node this effect created. React owns
+      // the host div and all its siblings; wiping the host (or the stage)
+      // would tear tracked nodes out of the live DOM and crash the next
+      // commit with "insertBefore ... not a child of this node".
       try {
-        const host = ytHostOptionRef.current?.current ?? ytHostRef.current;
-        if (host?.isConnected) {
-          host.replaceChildren();
-        } else if (stage?.isConnected) {
-          stage.replaceChildren();
-        }
+        mountNode?.remove();
       } catch {
-        /* nodes already gone */
+        /* already gone */
       }
-      ytHostRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -662,6 +654,7 @@ export function useMediaSync({
   }, [mediaType, muted, volume, videoRef]);
 
   return {
+    ytHostRef,
     mediaType,
     ready: mediaType === "youtube" ? ytReady : mediaType === "direct",
     playing,

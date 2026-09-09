@@ -25,10 +25,8 @@ interface MediaPanelProps {
   roomName: string;
   roomCode: string;
   sync: MediaSync;
-  /** React wrapper that permanently hosts the YouTube iframe (YT API replaces its child node). */
-  stageRef: RefObject<HTMLDivElement | null>;
-  /** Disposable inner host the YT iframe actually mounts into (kept out of React's tree). */
-  ytHostRef: RefObject<HTMLDivElement | null>;
+  /** Disposable inner host the YT iframe mounts into (callback ref from useMediaSync). */
+  ytHostRef: (node: HTMLDivElement | null) => void;
   /** HTML5 <video> element for direct files (always mounted). */
   videoRef: RefObject<HTMLVideoElement | null>;
   onAddLink: (media: ParsedMediaLink) => void;
@@ -43,7 +41,6 @@ export function MediaPanel({
   roomName,
   roomCode,
   sync,
-  stageRef,
   ytHostRef,
   videoRef,
   onAddLink,
@@ -53,6 +50,7 @@ export function MediaPanel({
   cinemaMode,
   onToggleCinema,
 }: MediaPanelProps) {
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [link, setLink] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -118,13 +116,11 @@ export function MediaPanel({
         className="ordex-fs-stage relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black"
       >
         <div className="relative aspect-video max-h-full w-full max-w-full max-md:max-h-[56vw]">
-          {/* YouTube host — always mounted. The YT API mounts its iframe inside
-              a disposable inner div created by use-media-sync; React never
-              owns the swapped node, so the virtual DOM stays consistent.
-              This host lives INSIDE the 16:9 box so the iframe is properly
-              sized/positioned and hidden when a direct video takes over.
-              NOTE: the stage ref lives on the outer player-area div only —
-              a second ref here used to double-bind the same node. */}
+          {/* YouTube host — always mounted while this panel is mounted. The YT
+              API swaps a disposable inner node for the iframe (managed by
+              use-media-sync); React owns only this host div itself. Mounted
+              through the sync callback ref so the player follows the node
+              across tab switches without touching React's other children. */}
           <div
             ref={ytHostRef}
             className={cn("absolute inset-0 size-full [&_iframe]:size-full", isDirect && "invisible")}

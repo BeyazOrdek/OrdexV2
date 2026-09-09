@@ -66,6 +66,22 @@ function isPolite(self: string, other: string) {
   return self < other;
 }
 
+/**
+ * Isolated container for remote WebRTC <audio> elements. Keeping them out of
+ * React's render root means React never has to reconcile around them, and
+ * removal on leave/disconnect can never detach a node React still tracks.
+ */
+function remoteAudioRoot(): HTMLElement {
+  let root = document.getElementById("ordex-remote-audio");
+  if (!root) {
+    root = document.createElement("div");
+    root.id = "ordex-remote-audio";
+    root.style.cssText = "position:fixed;width:0;height:0;overflow:hidden;pointer-events:none;";
+    document.body.appendChild(root);
+  }
+  return root;
+}
+
 export function useVoice({
   roomId,
   sessionId,
@@ -225,12 +241,15 @@ export function useVoice({
 
       pc.ontrack = (event) => {
         // Build a dedicated <audio autoplay> element for the remote stream.
+        // Elements live in an isolated container appended to <body> — never as
+        // loose siblings of React-managed/portal nodes, which is a known
+        // trigger for "insertBefore ... not a child of this node" crashes.
         let audioEl = peer.audioEl;
         if (!audioEl) {
           audioEl = document.createElement("audio");
           audioEl.autoplay = true;
           audioEl.dataset.peer = remoteSession;
-          document.body.appendChild(audioEl);
+          remoteAudioRoot().appendChild(audioEl);
           peer.audioEl = audioEl;
         }
         const [remoteStream] = event.streams;
