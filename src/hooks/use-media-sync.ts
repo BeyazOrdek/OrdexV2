@@ -281,10 +281,14 @@ export function useMediaSync({
           },
           events: {
             onReady: () => {
-              if (cancelled || !player) return;
+              // Copy into a const first: TS can lose narrowing of the captured
+              // `let player` inside nested callbacks, which breaks the type of
+              // the killCaptionsAndBoostQuality() argument below.
+              const readyPlayer = player;
+              if (cancelled || !readyPlayer) return;
               ytReadyRef.current = true;
-              player.setVolume(volume);
-              killCaptionsAndBoostQuality(player);
+              readyPlayer.setVolume(volume);
+              killCaptionsAndBoostQuality(readyPlayer);
               setYtReady(true);
             },
             onApiChange: () => {
