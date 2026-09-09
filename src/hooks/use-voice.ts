@@ -99,8 +99,11 @@ export function useVoice({
   const sharingRef = useRef(false);
 
   // Mirror voice state up to the parent without re-triggering effects.
+  // (Ref writes happen in effects — never during render.)
   const onVoiceStateChangeRef = useRef(onVoiceStateChange);
-  onVoiceStateChangeRef.current = onVoiceStateChange;
+  useEffect(() => {
+    onVoiceStateChangeRef.current = onVoiceStateChange;
+  }, [onVoiceStateChange]);
   useEffect(() => {
     onVoiceStateChangeRef.current?.({ inVoice, micOn, camOn, isSharing });
   }, [inVoice, micOn, camOn, isSharing]);
@@ -491,7 +494,9 @@ export function useVoice({
     }
   }, []);
   const stopScreenShareRef = useRef(stopScreenShare);
-  stopScreenShareRef.current = stopScreenShare;
+  useEffect(() => {
+    stopScreenShareRef.current = stopScreenShare;
+  }, [stopScreenShare]);
 
   const leave = useCallback(() => {
     inVoiceRef.current = false;

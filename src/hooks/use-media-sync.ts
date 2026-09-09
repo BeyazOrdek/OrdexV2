@@ -2,6 +2,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 
 // ---- YouTube IFrame API bootstrap ----
 
@@ -100,13 +101,13 @@ export interface UseMediaSyncOptions {
   roomId: Id<"rooms">;
   sessionId: string;
   onEnded: (mediaKey: string) => void;
+  /** React wrapper div that permanently hosts the YouTube iframe. */
+  stageRef: RefObject<HTMLDivElement | null>;
+  /** HTML5 <video> element for direct files (always mounted). */
+  videoRef: RefObject<HTMLVideoElement | null>;
 }
 
 export interface MediaSync {
-  /** Host node replaced by the YouTube iframe (always mounted). */
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  /** HTML5 <video> element for direct files — the panel renders it (always mounted). */
-  videoRef: React.RefObject<HTMLVideoElement | null>;
   mediaType: MediaType | null;
   ready: boolean;
   playing: boolean;
@@ -183,6 +184,8 @@ export function useMediaSync({
   roomId,
   sessionId,
   onEnded,
+  stageRef,
+  videoRef,
 }: UseMediaSyncOptions): MediaSync {
   const setMedia = useMutation(api.rooms.setMedia);
 
@@ -193,8 +196,6 @@ export function useMediaSync({
     ? (state.mediaType ?? "youtube") // legacy rows without mediaType are YouTube
     : null;
 
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerRef = useRef<YTPlayer | null>(null);
   const ytReadyRef = useRef(false);
   const applyingRef = useRef(false); // true while applying a remote change (don't echo back)
@@ -213,8 +214,12 @@ export function useMediaSync({
   const [muted, setMuted] = useState(false);
   const [endedMediaKey, setEndedMediaKey] = useState<string | undefined>(undefined);
 
+  // Mirror `onEnded` into a ref inside an effect (refs must not be written
+  // during render — the compiler enforces this).
   const onEndedRef = useRef(onEnded);
-  onEndedRef.current = onEnded;
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
 
   const publish = useCallback(
     (videoId: string, mediaType: MediaType, mediaUrl: string | undefined, isPlaying: boolean, positionSec: number, force = false) => {
@@ -242,7 +247,7 @@ export function useMediaSync({
     let player: YTPlayer | null = null;
     loadYouTubeApi()
       .then((YT) => {
-        const host = hostRef.current;
+        const host = stageRef.current;
         if (cancelled || !host) return;
         // NEVER hand a React-managed node to the YT API: it *replaces* that
         // node with the iframe, which corrupts React's virtual DOM and makes
@@ -324,7 +329,7 @@ export function useMediaSync({
       // Remove leftover YT nodes without touching the React-owned wrapper
       // itself (never remove/replace the wrapper node React is tracking).
       try {
-        hostRef.current?.replaceChildren();
+        stageRef.current?.replaceChildren();
       } catch {
         /* wrapper already gone */
       }
@@ -616,8 +621,6 @@ export function useMediaSync({
   }, [mediaType, muted, volume]);
 
   return {
-    containerRef: hostRef,
-    videoRef,
     mediaType,
     ready: mediaType === "youtube" ? ytReady : mediaType === "direct",
     playing,

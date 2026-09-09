@@ -2,7 +2,7 @@ import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import type { VoiceParticipant } from "@/hooks/use-voice";
 import { cn } from "@/lib/utils";
-import { avatarHue, initials, parseMediaLink, thumbFor, type ParsedMediaLink } from "@/lib/utils-room";
+import { initials, parseMediaLink, thumbFor } from "@/lib/utils-room";
 import { useMutation, useQuery } from "convex/react";
 import {
   Headphones,

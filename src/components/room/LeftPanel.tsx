@@ -21,7 +21,6 @@ import { CreateRoomModal } from "@/components/CreateRoomModal";
 import { ProfileModal } from "@/components/ProfileModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { FriendsPanel } from "@/components/social/FriendsPanel";
-import type { ThemeId } from "@/lib/theme";
 import { useTheme } from "@/lib/theme";
 
 type Tab = "rooms" | "friends";

@@ -5,13 +5,6 @@ import type { Id } from "./_generated/dataModel";
 
 // ---------- ÖRDEX social: friends + direct messages ----------
 
-const PublicUser = v.object({
-  _id: v.id("users"),
-  name: v.string(),
-  statusMessage: v.optional(v.string()),
-  avatarUrl: v.optional(v.string()),
-});
-
 async function requireUser(ctx: { auth: unknown }) {
   const userId = await getAuthUserId(ctx as never);
   if (userId === null) throw new Error("Giriş yapmalısın.");

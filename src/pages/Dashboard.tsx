@@ -17,7 +17,7 @@ import { useNavigate } from "react-router";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
 import { ProfileModal } from "@/components/ProfileModal";
 import { SettingsModal } from "@/components/SettingsModal";
-import { useTheme, type ThemeId } from "@/lib/theme";
+import { useTheme } from "@/lib/theme";
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();

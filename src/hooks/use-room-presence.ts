@@ -31,9 +31,14 @@ export function useRoomPresence({
   const presenceRows = useQuery(api.presence.listPresence, { roomId });
 
   const infoRef = useRef({ sessionId, userName, avatarHue });
-  infoRef.current = { sessionId, userName, avatarHue };
   const voiceRef = useRef({ inVoice, micOn, camOn, isSharing });
-  voiceRef.current = { inVoice, micOn, camOn, isSharing };
+  // Mirror props into refs inside effects (refs must not be written during render).
+  useEffect(() => {
+    infoRef.current = { sessionId, userName, avatarHue };
+  }, [sessionId, userName, avatarHue]);
+  useEffect(() => {
+    voiceRef.current = { inVoice, micOn, camOn, isSharing };
+  }, [inVoice, micOn, camOn, isSharing]);
 
   // Immediate heartbeat whenever voice state changes + periodic keepalive.
   useEffect(() => {

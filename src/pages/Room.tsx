@@ -21,6 +21,8 @@ export default function Room() {
   const { code = "" } = useParams<{ code: string }>();
   const { user } = useAuth();
   const sessionId = useMemo(() => getSessionId(), []);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const syncVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const joinRoom = useMutation(api.rooms.joinRoom);
   const [roomId, setRoomId] = useState<Id<"rooms"> | null>(null);
@@ -114,7 +116,13 @@ function RoomView({
     onVoiceStateChange: setVoiceUi,
   });
 
-  const sync = useMediaSync({ roomId, sessionId, onEnded: () => undefined });
+  const sync = useMediaSync({
+    roomId: roomId as Id<"rooms">,
+    sessionId,
+    onEnded: () => undefined,
+    stageRef,
+    videoRef: syncVideoRef,
+  });
   const advanceQueue = useMutation(api.rooms.advanceQueue);
   const addToQueue = useMutation(api.rooms.addToQueue);
 
@@ -211,6 +219,8 @@ function RoomView({
                 roomName={roomName}
                 roomCode={roomCode}
                 sync={sync}
+                stageRef={stageRef}
+                videoRef={syncVideoRef}
                 onAddLink={addLink}
                 onNext={skipToNext}
                 localStream={voice.localStream}
@@ -264,6 +274,8 @@ function RoomView({
             roomName={roomName}
             roomCode={roomCode}
             sync={sync}
+            stageRef={stageRef}
+            videoRef={syncVideoRef}
             onAddLink={addLink}
             onNext={skipToNext}
             localStream={voice.localStream}

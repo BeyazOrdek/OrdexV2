@@ -1,7 +1,6 @@
 import { cn } from "@/lib/utils";
 import {
   Headphones,
-  Loader2,
   Maximize,
   Mic,
   MicOff,
@@ -11,8 +10,6 @@ import {
   Radio,
   Square,
   Users,
-  Video,
-  VideoOff,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";

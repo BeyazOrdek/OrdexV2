@@ -16,7 +16,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -25,6 +25,10 @@ interface MediaPanelProps {
   roomName: string;
   roomCode: string;
   sync: MediaSync;
+  /** React wrapper that permanently hosts the YouTube iframe (YT API replaces its child node). */
+  stageRef: RefObject<HTMLDivElement | null>;
+  /** HTML5 <video> element for direct files (always mounted). */
+  videoRef: RefObject<HTMLVideoElement | null>;
   onAddLink: (media: ParsedMediaLink) => void;
   onNext: () => void;
   localStream: MediaStream | null;
@@ -37,6 +41,8 @@ export function MediaPanel({
   roomName,
   roomCode,
   sync,
+  stageRef,
+  videoRef,
   onAddLink,
   onNext,
   localStream,
@@ -114,12 +120,12 @@ export function MediaPanel({
               a disposable inner div created by use-media-sync; React never
               owns the swapped node, so the virtual DOM stays consistent. */}
           <div
-            ref={sync.containerRef}
+            ref={stageRef}
             className={cn("absolute inset-0 size-full [&_iframe]:size-full", isDirect && "invisible")}
           />
           {/* Direct HTML5 video — always mounted; only visible for direct files. */}
           <video
-            ref={sync.videoRef}
+            ref={videoRef}
             playsInline
             controls={false}
             className={cn(

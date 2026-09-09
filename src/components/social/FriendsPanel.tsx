@@ -110,7 +110,6 @@ export function FriendsPanel() {
 
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<PublicUserLite[] | null>(null);
-  const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [dmWith, setDmWith] = useState<PublicUserLite | null>(null);
 
@@ -119,19 +118,9 @@ export function FriendsPanel() {
     search.trim().length >= 2 ? { name: search.trim() } : "skip",
   );
 
-  // Live user search: reflect Convex query results with a tiny loading flag.
-  useEffect(() => {
-    const q = search.trim();
-    if (q.length < 2) {
-      setSearchResults(null);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    if (searchUsers === undefined) return; // query still loading
-    setSearchResults(searchUsers as PublicUserLite[]);
-    setSearching(false);
-  }, [search, searchUsers]);
+  // Live user search: derive results directly from the reactive Convex query
+  // (no effect/state mirror — avoids cascading renders).
+  const isSearching = search.trim().length >= 2 && searchUsers === undefined;
 
   const friendIds = new Set(friends.map((f) => f._id));
   const incomingIds = new Set(incoming.map((u) => u._id));
@@ -169,16 +158,16 @@ export function FriendsPanel() {
         {/* Search results */}
         {search.trim().length >= 2 && (
           <div className="mt-2 max-h-40 space-y-1 overflow-y-auto [scrollbar-width:thin]">
-            {searching && (
+            {isSearching && (
               <div className="flex items-center gap-2 px-1 py-1 text-[11px] text-zinc-500">
                 <Loader2 className="size-3.5 animate-spin" /> Aranıyor...
               </div>
             )}
-            {!searching && searchResults && searchResults.length === 0 && (
+            {!isSearching && searchUsers !== undefined && (searchUsers as PublicUserLite[]).length === 0 && (
               <p className="px-1 py-1 text-[11px] text-zinc-600">Kullanıcı bulunamadı.</p>
             )}
-            {!searching &&
-              searchResults?.map((u) => (
+            {!isSearching &&
+              (searchUsers as PublicUserLite[] | undefined)?.map((u) => (
                 <div
                   key={u._id}
                   className="flex items-center gap-2 rounded-md bg-black/20 px-2 py-1.5"
