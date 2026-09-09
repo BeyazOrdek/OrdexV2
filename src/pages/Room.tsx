@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 export default function Room() {
   const { code = "" } = useParams<{ code: string }>();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const sessionId = useMemo(() => getSessionId(), []);
 
   const joinRoom = useMutation(api.rooms.joinRoom);
@@ -54,7 +55,34 @@ export default function Room() {
     );
   }
 
-  if (!roomId || !room) {
+  // useQuery: undefined = still loading, null = the room definitively does
+  // not exist (auto-deleted when it emptied, or a wrong/expired code). This
+  // MUST be distinguished — treating null as "loading" spun here forever,
+  // because roomClosed detection only runs inside the (never-mounted) view.
+  if (room === null) {
+    return (
+      <main className="ordex-bg flex min-h-screen flex-col items-center justify-center gap-4 text-center">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-[var(--ordex-accent-soft)] text-[var(--ordex-accent)]">
+          <DoorOpen className="size-7" />
+        </span>
+        <div>
+          <p className="text-lg font-semibold text-white">Oda bulunamadı</p>
+          <p className="mt-1 max-w-sm text-sm text-[var(--ordex-muted)]">
+            Bu oda kapandığı için silindi ya da kod hatalı. Yeni bir oda oluşturabilir veya kodu
+            tekrar kontrol edebilirsin.
+          </p>
+        </div>
+        <Button
+          onClick={() => navigate("/")}
+          className="gap-2 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)]"
+        >
+          <Home className="size-4" /> Ana sayfaya dön
+        </Button>
+      </main>
+    );
+  }
+
+  if (!roomId || room === undefined) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

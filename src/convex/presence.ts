@@ -81,7 +81,17 @@ export const leave = mutation({
       .withIndex("by_room", (q) => q.eq("roomId", roomId))
       .take(1);
     if (remaining.length === 0) {
-      await deleteRoomCascade(ctx, roomId);
+      // Young-room grace: React StrictMode's dev double-mount fires leave()
+      // right after the first heartbeat, and the room creator is usually the
+      // only occupant at that moment. Cascade-deleting here killed rooms a
+      // few seconds old — the client then saw a "connecting" spinner forever.
+      // Rooms younger than GRACE_MS are left alive for cleanupStaleRooms,
+      // which sweeps them once their presence goes stale.
+      const GRACE_MS = 60_000;
+      const room = await ctx.db.get(roomId);
+      if (room && Date.now() - room.createdAt >= GRACE_MS) {
+        await deleteRoomCascade(ctx, roomId);
+      }
       return;
     }
     if (wasSharing) {
