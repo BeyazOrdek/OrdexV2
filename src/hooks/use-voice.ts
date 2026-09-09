@@ -493,7 +493,7 @@ export function useVoice({
         /* voice is optional while sharing */
       }
     }
-  }, [attachSpeakingMonitor]);
+  }, [attachSpeakingMonitor, stopScreenShare]);
 
   const leave = useCallback(() => {
     inVoiceRef.current = false;

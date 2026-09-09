@@ -249,9 +249,12 @@ export function useMediaSync({
   useEffect(() => {
     let cancelled = false;
     let player: YTPlayer | null = null;
+    // Capture the wrapper node once: the ref object is stable, but by cleanup
+    // time a re-render may have repointed it; teardown must clean THIS mount.
+    const stage = stageRef.current;
     loadYouTubeApi()
       .then((YT) => {
-        const host = stageRef.current;
+        const host = stage;
         if (cancelled || !host) return;
         // NEVER hand a React-managed node to the YT API: it *replaces* that
         // node with the iframe, which corrupts React's virtual DOM and makes
@@ -337,7 +340,7 @@ export function useMediaSync({
       // Remove leftover YT nodes without touching the React-owned wrapper
       // itself (never remove/replace the wrapper node React is tracking).
       try {
-        stageRef.current?.replaceChildren();
+        stage?.replaceChildren();
       } catch {
         /* wrapper already gone */
       }
@@ -554,7 +557,7 @@ export function useMediaSync({
     if (!player || !ytReadyRef.current || !state?.currentVideoId) return;
     player.playVideo();
     publish(player.getVideoData().video_id, "youtube", undefined, true, player.getCurrentTime(), true);
-  }, [mediaType, publish, state?.currentVideoId]);
+  }, [mediaType, publish, state?.currentVideoId, videoRef]);
 
   const pause = useCallback(() => {
     if (mediaType === "direct") {
@@ -567,7 +570,7 @@ export function useMediaSync({
     if (!player || !ytReadyRef.current || !state?.currentVideoId) return;
     player.pauseVideo();
     publish(player.getVideoData().video_id, "youtube", undefined, false, player.getCurrentTime(), true);
-  }, [mediaType, publish, state?.currentVideoId]);
+  }, [mediaType, publish, state?.currentVideoId, videoRef]);
 
   const seek = useCallback(
     (seconds: number) => {
@@ -587,7 +590,7 @@ export function useMediaSync({
       setCurrentTime(seconds);
       publish(player.getVideoData().video_id, "youtube", undefined, wasPlaying, seconds, true);
     },
-    [mediaType, publish, state?.currentVideoId],
+    [mediaType, publish, state?.currentVideoId, videoRef],
   );
 
   const setVolume = useCallback((v: number) => {
@@ -602,7 +605,7 @@ export function useMediaSync({
     }
     playerRef.current?.setVolume(v);
     if (v > 0) playerRef.current?.unMute();
-  }, [mediaType]);
+  }, [mediaType, videoRef]);
 
   const toggleMute = useCallback(() => {
     if (mediaType === "direct") {
@@ -626,7 +629,7 @@ export function useMediaSync({
       player.mute();
       setMuted(true);
     }
-  }, [mediaType, muted, volume]);
+  }, [mediaType, muted, volume, videoRef]);
 
   return {
     mediaType,

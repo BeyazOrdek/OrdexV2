@@ -81,11 +81,16 @@ function UserAvatar({
   );
 }
 
+// Stable empty arrays: keeps fallback identities constant across renders so
+// hooks depending on these lists don't see new references every render.
+const EMPTY_USERS: PublicUserLite[] = [];
+const EMPTY_DM: (PublicUserLite & { lastAt: number })[] = [];
+
 export function FriendsPanel() {
-  const friends = (useQuery(api.social.listFriends, {}) ?? []) as PublicUserLite[];
-  const incoming = (useQuery(api.social.listIncomingRequests, {}) ?? []) as PublicUserLite[];
-  const outgoing = (useQuery(api.social.listOutgoingRequests, {}) ?? []) as PublicUserLite[];
-  const dmContacts = (useQuery(api.social.listDmContacts, {}) ?? []) as (PublicUserLite & { lastAt: number })[];
+  const friends = (useQuery(api.social.listFriends, {}) ?? EMPTY_USERS) as PublicUserLite[];
+  const incoming = (useQuery(api.social.listIncomingRequests, {}) ?? EMPTY_USERS) as PublicUserLite[];
+  const outgoing = (useQuery(api.social.listOutgoingRequests, {}) ?? EMPTY_USERS) as PublicUserLite[];
+  const dmContacts = (useQuery(api.social.listDmContacts, {}) ?? EMPTY_DM) as (PublicUserLite & { lastAt: number })[];
 
   // Live online/offline status from room presence (reactive).
   const allIds = useMemo(
