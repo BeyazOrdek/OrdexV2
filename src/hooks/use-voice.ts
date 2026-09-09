@@ -257,6 +257,33 @@ export function useVoice({
         }
       };
 
+      // ICE-level watchdog: temporary drops report "disconnected" and hard
+      // failures report "failed". Both trigger restartIce() WITHOUT tearing
+      // the session down, so voice self-heals after tab switches / network
+      // changes instead of leaving the user stuck in a silent channel.
+      pc.oniceconnectionstatechange = () => {
+        if (pc.iceConnectionState !== "disconnected" && pc.iceConnectionState !== "failed") return;
+        try {
+          pc.restartIce();
+        } catch {
+          /* older browsers without restartIce */
+        }
+        // If ICE is still not back after the restart grace period, the
+        // negotiation mesh effect will rebuild the peer from scratch.
+        if (pc.iceConnectionState === "failed") {
+          window.setTimeout(() => {
+            if (pc.iceConnectionState === "failed" && peersRef.current.get(remoteSession) === peer) {
+              try {
+                pc.restartIce();
+              } catch {
+                /* noop */
+              }
+              void negotiate(peer);
+            }
+          }, 3000);
+        }
+      };
+
       // Perfect negotiation.
       pc.onnegotiationneeded = () => {
         void negotiate(peer);

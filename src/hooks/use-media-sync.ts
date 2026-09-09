@@ -103,6 +103,12 @@ export interface UseMediaSyncOptions {
   onEnded: (mediaKey: string) => void;
   /** React wrapper div that permanently hosts the YouTube iframe. */
   stageRef: RefObject<HTMLDivElement | null>;
+  /**
+   * Disposable inner host node the YT iframe mounts into. React never owns
+   * this node; teardown deletes it explicitly. Optional fallback: when not
+   * provided the player mounts into stageRef's node as before.
+   */
+  ytHostRef?: RefObject<HTMLDivElement | null>;
   /** HTML5 <video> element for direct files (always mounted). */
   videoRef: RefObject<HTMLVideoElement | null>;
 }
@@ -185,6 +191,7 @@ export function useMediaSync({
   sessionId,
   onEnded,
   stageRef,
+  ytHostRef: ytHostRefOption,
   videoRef,
 }: UseMediaSyncOptions): MediaSync {
   const setMedia = useMutation(api.rooms.setMedia);
@@ -197,6 +204,18 @@ export function useMediaSync({
     : null;
 
   const playerRef = useRef<YTPlayer | null>(null);
+  /**
+   * Disposable node the YT iframe mounts into. React never owns this node:
+   * the YT API replaces it with the iframe, and our teardown deletes it
+   * explicitly. Kept in a ref (not read during render) so MediaPanel can
+   * position the player inside its 16:9 host instead of as a bare sibling.
+   */
+  const ytHostRef = useRef<HTMLDivElement | null>(null);
+  // Local ref + mirrored option ref: callers may pass their own host ref.
+  const ytHostOptionRef = useRef<RefObject<HTMLDivElement | null> | null>(null);
+  useEffect(() => {
+    ytHostOptionRef.current = ytHostRefOption ?? null;
+  }, [ytHostRefOption]);
   const ytReadyRef = useRef(false);
   const applyingRef = useRef(false); // true while applying a remote change (don't echo back)
   const ytAppliedRef = useRef("");
@@ -254,7 +273,9 @@ export function useMediaSync({
     const stage = stageRef.current;
     loadYouTubeApi()
       .then((YT) => {
-        const host = stage;
+        // The dedicated 16:9 host inside the stage (falls back to the stage
+        // itself if MediaPanel hasn't wired ytHostRef yet).
+        const host = ytHostOptionRef.current?.current ?? ytHostRef.current ?? stage;
         if (cancelled || !host) return;
         // NEVER hand a React-managed node to the YT API: it *replaces* that
         // node with the iframe, which corrupts React's virtual DOM and makes
@@ -337,13 +358,22 @@ export function useMediaSync({
       }
       playerRef.current = null;
       ytReadyRef.current = false;
-      // Remove leftover YT nodes without touching the React-owned wrapper
-      // itself (never remove/replace the wrapper node React is tracking).
+      // Remove only the nodes THIS effect created. replaceChildren() on the
+      // stage would also wipe React-managed siblings (camera preview, empty
+      // state, overlays) — in StrictMode's mount→cleanup→mount cycle that
+      // detaches live DOM nodes React still tracks, and the next conditional
+      // insert throws "insertBefore ... not a child of this node".
       try {
-        stage?.replaceChildren();
+        const host = ytHostOptionRef.current?.current ?? ytHostRef.current;
+        if (host?.isConnected) {
+          host.replaceChildren();
+        } else if (stage?.isConnected) {
+          stage.replaceChildren();
+        }
       } catch {
-        /* wrapper already gone */
+        /* nodes already gone */
       }
+      ytHostRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

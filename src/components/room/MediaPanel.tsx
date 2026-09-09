@@ -27,6 +27,8 @@ interface MediaPanelProps {
   sync: MediaSync;
   /** React wrapper that permanently hosts the YouTube iframe (YT API replaces its child node). */
   stageRef: RefObject<HTMLDivElement | null>;
+  /** Disposable inner host the YT iframe actually mounts into (kept out of React's tree). */
+  ytHostRef: RefObject<HTMLDivElement | null>;
   /** HTML5 <video> element for direct files (always mounted). */
   videoRef: RefObject<HTMLVideoElement | null>;
   onAddLink: (media: ParsedMediaLink) => void;
@@ -42,6 +44,7 @@ export function MediaPanel({
   roomCode,
   sync,
   stageRef,
+  ytHostRef,
   videoRef,
   onAddLink,
   onNext,
@@ -118,9 +121,12 @@ export function MediaPanel({
           {/* YouTube host — always mounted. The YT API mounts its iframe inside
               a disposable inner div created by use-media-sync; React never
               owns the swapped node, so the virtual DOM stays consistent.
+              This host lives INSIDE the 16:9 box so the iframe is properly
+              sized/positioned and hidden when a direct video takes over.
               NOTE: the stage ref lives on the outer player-area div only —
               a second ref here used to double-bind the same node. */}
           <div
+            ref={ytHostRef}
             className={cn("absolute inset-0 size-full [&_iframe]:size-full", isDirect && "invisible")}
           />
           {/* Direct HTML5 video — always mounted; only visible for direct files. */}

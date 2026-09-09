@@ -191,9 +191,14 @@ export const cleanupStaleRooms = mutation({
   handler: async (ctx) => {
     const now = Date.now();
     const STALE_MS = 45_000;
+    // Grace period for freshly created rooms: presence starts when the owner's
+    // Room page mounts (a beat after the create mutation commits), so a sweep
+    // must never delete a room that hasn't had its first heartbeat yet.
+    const CREATE_GRACE_MS = 90_000;
     const rooms = await ctx.db.query("rooms").take(200);
     let deleted = 0;
     for (const room of rooms) {
+      if (now - room.createdAt < CREATE_GRACE_MS) continue;
       const occupants = await ctx.db
         .query("presence")
         .withIndex("by_room", (q) => q.eq("roomId", room._id))
