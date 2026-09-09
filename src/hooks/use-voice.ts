@@ -416,6 +416,25 @@ export function useVoice({
     }
   }, [attachSpeakingMonitor]);
 
+  /** Stop the display/game capture and restore peers to camera-off state. */
+  const stopScreenShare = useCallback(() => {
+    if (!sharingRef.current) return;
+    sharingRef.current = false;
+    setIsSharing(false);
+    const stream = shareStreamRef.current;
+    if (stream) {
+      for (const track of stream.getTracks()) track.stop();
+    }
+    shareStreamRef.current = null;
+    // Restore peers to camera-off state: stop video senders.
+    for (const peer of peersRef.current.values()) {
+      const sender = peer.pc.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) {
+        void sender.replaceTrack(null).catch(() => undefined);
+      }
+    }
+  }, []);
+
   /** Broadcast the display/game capture to every peer (replaces camera track). */
   const startScreenShare = useCallback(async () => {
     if (sharingRef.current) return;
@@ -438,7 +457,7 @@ export function useVoice({
     const track = stream.getVideoTracks()[0];
     if (!track) return;
     // Browser's built-in "stop sharing" button ends the broadcast cleanly.
-    track.addEventListener("ended", () => stopScreenShareRef.current());
+    track.addEventListener("ended", () => stopScreenShare());
     shareStreamRef.current = stream;
     sharingRef.current = true;
     setIsSharing(true);
@@ -476,28 +495,6 @@ export function useVoice({
     }
   }, [attachSpeakingMonitor]);
 
-  const stopScreenShare = useCallback(() => {
-    if (!sharingRef.current) return;
-    sharingRef.current = false;
-    setIsSharing(false);
-    const stream = shareStreamRef.current;
-    if (stream) {
-      for (const track of stream.getTracks()) track.stop();
-    }
-    shareStreamRef.current = null;
-    // Restore peers to camera-off state: stop video senders.
-    for (const peer of peersRef.current.values()) {
-      const sender = peer.pc.getSenders().find((s) => s.track?.kind === "video");
-      if (sender) {
-        void sender.replaceTrack(null).catch(() => undefined);
-      }
-    }
-  }, []);
-  const stopScreenShareRef = useRef(stopScreenShare);
-  useEffect(() => {
-    stopScreenShareRef.current = stopScreenShare;
-  }, [stopScreenShare]);
-
   const leave = useCallback(() => {
     inVoiceRef.current = false;
     setInVoice(false);
@@ -508,7 +505,7 @@ export function useVoice({
     if (stream) {
       for (const track of stream.getTracks()) track.stop();
     }
-    stopScreenShareRef.current();
+    stopScreenShare();
     localStreamRef.current = null;
     setLocalStream(null);
     setRemoteStreams(new Map());
@@ -521,7 +518,7 @@ export function useVoice({
     setSpeakingSet(new Set());
     camOnRef.current = false;
     setCamOn(false);
-  }, [closePeer]);
+  }, [closePeer, stopScreenShare]);
 
   const toggleMic = useCallback(() => {
     // Stream stays alive; only track.enabled flips (spec requirement).

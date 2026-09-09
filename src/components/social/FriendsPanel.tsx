@@ -109,7 +109,6 @@ export function FriendsPanel() {
   const removeFriend = useMutation(api.social.removeFriend);
 
   const [search, setSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<PublicUserLite[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [dmWith, setDmWith] = useState<PublicUserLite | null>(null);
 

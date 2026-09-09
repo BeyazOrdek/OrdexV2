@@ -21,8 +21,6 @@ export default function Room() {
   const { code = "" } = useParams<{ code: string }>();
   const { user } = useAuth();
   const sessionId = useMemo(() => getSessionId(), []);
-  const stageRef = useRef<HTMLDivElement | null>(null);
-  const syncVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const joinRoom = useMutation(api.rooms.joinRoom);
   const [roomId, setRoomId] = useState<Id<"rooms"> | null>(null);
@@ -97,6 +95,11 @@ function RoomView({
 }) {
   // Voice UI state mirrored up so presence heartbeats reflect it.
   const [voiceUi, setVoiceUi] = useState({ inVoice: false, micOn: true, camOn: true, isSharing: false });
+
+  // Dedicated host nodes for the media layers (kept out of the sync object so
+  // consumers never read refs during render).
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const syncVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const presence = useRoomPresence({
     roomId,

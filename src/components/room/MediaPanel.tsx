@@ -55,7 +55,6 @@ export function MediaPanel({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const parsed = link.trim() ? parseMediaLink(link) : null;
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
-  const stageRef = useRef<HTMLDivElement | null>(null);
 
   // Fullscreen state sync (e.g. user exits with Esc).
   useEffect(() => {

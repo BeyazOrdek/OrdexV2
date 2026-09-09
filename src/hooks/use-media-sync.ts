@@ -239,7 +239,11 @@ export function useMediaSync({
     [roomId, sessionId, setMedia],
   );
 
-  mediaKeyRef.current = state?.currentVideoId;
+  // Mirror the active media key into a ref (in an effect, not during render)
+  // so the always-attached HTML5 video event handlers can read the current key.
+  useEffect(() => {
+    mediaKeyRef.current = state?.currentVideoId;
+  }, [state?.currentVideoId]);
 
   // ---- YouTube player lifecycle ----
   useEffect(() => {
