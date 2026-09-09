@@ -1,5 +1,38 @@
 /** ÖRDEX profile customization metadata shared by modals and chat rendering. */
 
+/**
+ * Read a locally picked image file and return it as a data URL. Non-GIF
+ * bitmaps are downscaled through a canvas (avatar ≤ 256px, banner ≤ 512px,
+ * long edge) so uploads stay small enough for the users document.
+ * GIFs are passed through untouched (resampling would kill the animation).
+ */
+export async function readImageFile(file: File, kind: "avatar" | "banner"): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error("Lütfen bir görsel dosyası seç.");
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Dosya okunamadı."));
+    reader.readAsDataURL(file);
+  });
+  if (file.type === "image/gif") return dataUrl;
+
+  const maxEdge = kind === "avatar" ? 256 : 512;
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Görsel yüklenemedi."));
+    image.src = dataUrl;
+  });
+  const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(img.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl; // canvas unavailable — send original
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
 export interface BadgeMeta {
   id: string;
   label: string;

@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { mutation, type MutationCtx, query } from "./_generated/server";
 
 const mediaTypeValidator = v.union(v.literal("youtube"), v.literal("direct"));
 
@@ -11,6 +12,15 @@ const mediaTypeValidator = v.union(v.literal("youtube"), v.literal("direct"));
 const SECRET_VISIBILITY = "secret" as const;
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/**
+ * Thrown by presence.heartbeat when the room has been auto-deleted
+ * (everyone left). In a Convex app the reactive queries are the realtime
+ * channel: as soon as a room row disappears, every connected client's
+ * public/my-rooms lists update instantly — the equivalent of the socket
+ * `room-deleted` broadcast.
+ */
+export const ROOM_CLOSED_ERROR = "ROOM_CLOSED";
 
 function generateRoomCode(): string {
   let code = "";
@@ -132,6 +142,70 @@ export const joinRoom = mutation({
       });
     }
     return { roomId: room._id, code: room.code };
+  },
+});
+
+// ---------- Auto room cleanup (empty rooms) ----------
+
+/**
+ * Delete a room and everything that belongs to it: memberships, messages,
+ * reactions, queue items, presence rows and pending WebRTC signals.
+ * Shared with presence.leave so a room vanishes the moment its last
+ * occupant disconnects or closes the tab.
+ */
+export async function deleteRoomCascade(ctx: MutationCtx, roomId: Id<"rooms">) {
+  await ctx.db.delete(roomId);
+  const [memberships, messages, queue, presence] = await Promise.all([
+    ctx.db.query("memberships").withIndex("by_room_user", (q) => q.eq("roomId", roomId)).collect(),
+    ctx.db.query("messages").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect(),
+    ctx.db.query("queueItems").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect(),
+    ctx.db.query("presence").withIndex("by_room", (q) => q.eq("roomId", roomId)).collect(),
+  ]);
+  await Promise.all([
+    ...memberships.map((m) => ctx.db.delete(m._id)),
+    ...queue.map((q) => ctx.db.delete(q._id)),
+    ...presence.map((p) => ctx.db.delete(p._id)),
+    ...messages.map(async (m) => {
+      const reactions = await ctx.db
+        .query("reactions")
+        .withIndex("by_message", (q) => q.eq("messageId", m._id))
+        .collect();
+      await Promise.all(reactions.map((r) => ctx.db.delete(r._id)));
+      await ctx.db.delete(m._id);
+    }),
+  ]);
+  // Signaling rows have no room index — scan and filter.
+  const signals = await ctx.db.query("signals").collect();
+  await Promise.all(
+    signals.filter((s) => s.roomId === roomId).map((s) => ctx.db.delete(s._id)),
+  );
+}
+
+/**
+ * Sweep rooms whose last occupant never sent a proper leave (crashed tab,
+ * lost connection, closed laptop lid). Presence rows older than STALE_MS
+ * count as "gone"; if none remain fresh the room is wiped.
+ */
+export const cleanupStaleRooms = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const STALE_MS = 45_000;
+    const rooms = await ctx.db.query("rooms").take(200);
+    let deleted = 0;
+    for (const room of rooms) {
+      const occupants = await ctx.db
+        .query("presence")
+        .withIndex("by_room", (q) => q.eq("roomId", room._id))
+        .take(51);
+      const fresh = occupants.filter((p) => now - p.lastSeen < STALE_MS);
+      if (fresh.length === 0) {
+        await deleteRoomCascade(ctx, room._id);
+        deleted++;
+        if (deleted >= 20) break; // bounded work per sweep
+      }
+    }
+    return { deleted };
   },
 });
 

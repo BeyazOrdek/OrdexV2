@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { deleteRoomCascade, ROOM_CLOSED_ERROR } from "./rooms";
 
 /** Called every ~10s and whenever voice state changes. Keeps the participant list fresh. */
 export const heartbeat = mutation({
@@ -18,6 +19,9 @@ export const heartbeat = mutation({
     const userId = await getAuthUserId(ctx);
     if (userId === null) throw new Error("Giriş yapmalısın.");
     const now = Date.now();
+    // Room was auto-deleted (everyone left)? Do not resurrect it with a new
+    // presence row — tell the client it is closed instead.
+    if (!(await ctx.db.get(args.roomId))) throw new Error(ROOM_CLOSED_ERROR);
     const existing = await ctx.db
       .query("presence")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
@@ -66,17 +70,29 @@ export const leave = mutation({
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
       .unique();
     if (!row) return;
+    const roomId = row.roomId;
     const wasSharing = row.isSharing === true;
     await ctx.db.delete(row._id);
+    // Auto room cleanup: if the last occupant just left, delete the room and
+    // everything attached to it. The reactive room lists on every connected
+    // client update instantly — the equivalent of a `room-deleted` broadcast.
+    const remaining = await ctx.db
+      .query("presence")
+      .withIndex("by_room", (q) => q.eq("roomId", roomId))
+      .take(1);
+    if (remaining.length === 0) {
+      await deleteRoomCascade(ctx, roomId);
+      return;
+    }
     if (wasSharing) {
       // The sharer left: clear the broadcast flag on the user's remaining
       // presence rows so nobody subscribes to a dead stream.
-      const remaining = await ctx.db
+      const userRows = await ctx.db
         .query("presence")
         .withIndex("by_user", (q) => q.eq("userId", row.userId))
         .collect();
       await Promise.all(
-        remaining
+        userRows
           .filter((r) => r.isSharing === true)
           .map((r) => ctx.db.patch(r._id, { isSharing: false })),
       );

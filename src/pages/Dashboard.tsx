@@ -15,18 +15,14 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
-import { ProfileModal } from "@/components/ProfileModal";
 import { SettingsModal } from "@/components/SettingsModal";
-import { useTheme } from "@/lib/theme";
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { theme, setTheme } = useTheme();
 
   const myRooms = useQuery(api.rooms.listMyRooms, {}) ?? [];
   const publicRooms = useQuery(api.rooms.listPublicRooms, {}) ?? [];
@@ -54,9 +50,9 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setProfileOpen(true)}
+              onClick={() => setSettingsOpen(true)}
               className="flex items-center gap-2 rounded-full p-1 pr-2 transition-colors hover:bg-white/5"
-              title="Profili düzenle"
+              title="Profil ve ayarlar"
             >
               {user?.avatarUrl ? (
                 <img
@@ -80,7 +76,7 @@ export default function Dashboard() {
               size="icon"
               variant="ghost"
               className="size-8 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-              title="Ayarlar ve tema"
+              title="Ayarlar (profil, tema, hesap)"
               onClick={() => setSettingsOpen(true)}
             >
               <Settings className="size-4" />
@@ -227,8 +223,7 @@ export default function Dashboard() {
       </div>
 
       <CreateRoomModal open={createOpen} onOpenChange={setCreateOpen} />
-      <ProfileModal open={profileOpen} onOpenChange={setProfileOpen} />
-      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} theme={theme} onThemeChange={setTheme} />
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
     </main>
   );
 }

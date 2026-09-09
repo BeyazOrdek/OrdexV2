@@ -76,6 +76,13 @@ export const getUsersPublic = query({
 });
 
 /**
+ * Hard cap for local image uploads stored as data URLs (Convex documents are
+ * 8 MB total; the client also downscales before sending, so this is a guard,
+ * not the primary limit).
+ */
+const MAX_UPLOAD_CHARS = 280_000;
+
+/**
  * Ensure the signed-in user has a unique lowercase username.
  * - Guests (isAnonymous) get the stable Guest_#### format, persisted on the
  *   account so page refreshes and reconnects never produce a new identity.
@@ -186,10 +193,14 @@ export const updateProfile = mutation({
       patch.statusMessage = args.statusMessage.trim().slice(0, 120) || undefined;
     }
     if (args.avatarUrl !== undefined) {
-      // Accept http(s) image/gif urls (e.g. a Tenor gif link) or clear with "".
+      // Accept http(s) image/gif urls (e.g. a Tenor gif link), a local-upload
+      // data URL (small images downscaled client-side), or clear with "".
       const url = args.avatarUrl.trim();
-      if (url && /^https?:\/\//i.test(url)) patch.avatarUrl = url;
-      else if (!url) patch.avatarUrl = undefined;
+      if (!url) patch.avatarUrl = undefined;
+      else if (url.startsWith("data:image/")) {
+        if (url.length <= MAX_UPLOAD_CHARS) patch.avatarUrl = url;
+        else throw new Error("Yüklenen görsel çok büyük — daha küçük bir dosya seç.");
+      } else if (/^https?:\/\//i.test(url)) patch.avatarUrl = url;
     }
     if (args.bannerColor !== undefined) {
       const color = args.bannerColor.trim();
@@ -197,8 +208,11 @@ export const updateProfile = mutation({
     }
     if (args.bannerUrl !== undefined) {
       const url = args.bannerUrl.trim();
-      if (url && /^https?:\/\//i.test(url)) patch.bannerUrl = url;
-      else if (!url) patch.bannerUrl = undefined;
+      if (!url) patch.bannerUrl = undefined;
+      else if (url.startsWith("data:image/")) {
+        if (url.length <= MAX_UPLOAD_CHARS) patch.bannerUrl = url;
+        else throw new Error("Yüklenen görsel çok büyük — daha küçük bir dosya seç.");
+      } else if (/^https?:\/\//i.test(url)) patch.bannerUrl = url;
     }
     if (args.nameColor !== undefined) {
       const color = args.nameColor.trim();

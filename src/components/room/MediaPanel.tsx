@@ -117,9 +117,10 @@ export function MediaPanel({
         <div className="relative aspect-video max-h-full w-full max-w-full max-md:max-h-[56vw]">
           {/* YouTube host — always mounted. The YT API mounts its iframe inside
               a disposable inner div created by use-media-sync; React never
-              owns the swapped node, so the virtual DOM stays consistent. */}
+              owns the swapped node, so the virtual DOM stays consistent.
+              NOTE: the stage ref lives on the outer player-area div only —
+              a second ref here used to double-bind the same node. */}
           <div
-            ref={stageRef}
             className={cn("absolute inset-0 size-full [&_iframe]:size-full", isDirect && "invisible")}
           />
           {/* Direct HTML5 video — always mounted; only visible for direct files. */}
@@ -213,33 +214,35 @@ export function MediaPanel({
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button
-            size="icon"
-            className="size-9 shrink-0 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)] disabled:opacity-40"
-            title={sync.playing ? "Duraklat" : "Oynat"}
-            disabled={!sync.hasVideo || !sync.ready}
-            onClick={() => (sync.playing ? sync.pause() : sync.play())}
-          >
-            {sync.playing ? <Pause className="size-4" /> : <Play className="size-4" />}
-          </Button>
-          <Button
-            size="icon"
-            variant="secondary"
-            className="size-9 shrink-0 bg-white/10 text-zinc-200 hover:bg-white/15"
-            title="Sıradaki videoya geç"
-            onClick={onNext}
-          >
-            <SkipForward className="size-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="secondary"
-            className="size-9 shrink-0 bg-white/10 text-zinc-200 hover:bg-white/15"
-            title={sync.muted ? "Sesi aç" : "Sessize al"}
-            onClick={sync.toggleMute}
-          >
-            {sync.muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
+              size="icon"
+              className="size-9 shrink-0 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)] disabled:opacity-40"
+              title={sync.playing ? "Duraklat" : "Oynat"}
+              disabled={!sync.hasVideo || !sync.ready}
+              onClick={() => (sync.playing ? sync.pause() : sync.play())}
+            >
+              {sync.playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+            </Button>
+            <Button
+              size="icon"
+              variant="secondary"
+              className="size-9 shrink-0 bg-white/10 text-zinc-200 hover:bg-white/15"
+              title="Sıradaki videoya geç"
+              onClick={onNext}
+            >
+              <SkipForward className="size-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="secondary"
+              className="size-9 shrink-0 bg-white/10 text-zinc-200 hover:bg-white/15"
+              title={sync.muted ? "Sesi aç" : "Sessize al"}
+              onClick={sync.toggleMute}
+            >
+              {sync.muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+            </Button>
+          </div>
           <Slider
             value={[sync.muted ? 0 : sync.volume]}
             max={100}

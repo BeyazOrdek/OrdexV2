@@ -18,10 +18,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
-import { ProfileModal } from "@/components/ProfileModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { FriendsPanel } from "@/components/social/FriendsPanel";
-import { useTheme } from "@/lib/theme";
 
 type Tab = "rooms" | "friends";
 
@@ -31,9 +29,7 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
   const [tab, setTab] = useState<Tab>("rooms");
   const [code, setCode] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { theme, setTheme } = useTheme();
 
   const myRooms = useQuery(api.rooms.listMyRooms, {}) ?? [];
   const publicRooms = useQuery(api.rooms.listPublicRooms, {}) ?? [];
@@ -155,29 +151,30 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
         <FriendsPanel />
       )}
 
-      {/* Profile */}
-      <div className="flex items-center gap-2 border-t border-white/5 bg-black/30 p-3">
-        {avatar}
-        <div className="min-w-0 flex-1 leading-tight">
-          <p className="truncate text-sm font-medium text-zinc-100">{user?.name ?? "Misafir"}</p>
-          <p className="truncate text-[11px] text-zinc-500">
-            {user?.statusMessage || "Çevrimiçi"}
-          </p>
-        </div>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-          title="Profili düzenle"
-          onClick={() => setProfileOpen(true)}
+      {/* Profile + unified settings (Discord-style single modal) */}
+      <div className="flex items-center gap-1 border-t border-white/5 bg-black/30 px-2 py-2">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 pr-2 text-left transition-colors hover:bg-white/5"
+          title="Profil ve ayarlar"
+          onClick={() => setSettingsOpen(true)}
         >
-          <Pencil className="size-3.5" />
-        </Button>
+          {avatar}
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block truncate text-sm font-medium text-zinc-100">
+              {user?.name ?? "Misafir"}
+            </span>
+            <span className="block truncate text-[11px] text-zinc-500">
+              {user?.statusMessage || "Çevrimiçi"}
+            </span>
+          </span>
+          <Pencil className="size-3.5 shrink-0 text-zinc-500" />
+        </button>
         <Button
           size="icon"
           variant="ghost"
-          className="size-8 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-          title="Ayarlar ve tema"
+          className="size-8 shrink-0 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          title="Ayarlar (profil, tema, hesap)"
           onClick={() => setSettingsOpen(true)}
         >
           <Settings className="size-4" />
@@ -185,7 +182,7 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
         <Button
           size="icon"
           variant="ghost"
-          className="size-8 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          className="size-8 shrink-0 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
           title="Ana sayfa"
           onClick={() => navigate("/")}
         >
@@ -194,7 +191,7 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
         <Button
           size="icon"
           variant="ghost"
-          className="size-8 text-zinc-400 hover:bg-white/10 hover:text-red-400"
+          className="size-8 shrink-0 text-zinc-400 hover:bg-white/10 hover:text-red-400"
           title="Çıkış"
           onClick={() => void signOut()}
         >
@@ -203,8 +200,7 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
       </div>
 
       <CreateRoomModal open={createOpen} onOpenChange={setCreateOpen} />
-      <ProfileModal open={profileOpen} onOpenChange={setProfileOpen} />
-      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} theme={theme} onThemeChange={setTheme} />
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
     </aside>
   );
 }

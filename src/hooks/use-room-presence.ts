@@ -16,6 +16,7 @@ export interface PresenceOptions {
 
 const HEARTBEAT_MS = 10_000;
 const FRESH_MS = 35_000;
+const CLEANUP_EVERY_MS = 20_000;
 
 export function useRoomPresence({
   roomId,
@@ -30,6 +31,10 @@ export function useRoomPresence({
   const heartbeat = useMutation(api.presence.heartbeat);
   const presenceRows = useQuery(api.presence.listPresence, { roomId });
 
+  // Set when the backend reports the room was auto-deleted (everyone left),
+  // or the local session left — Room.tsx shows a "room closed" screen.
+  const [roomClosed, setRoomClosed] = useState(false);
+
   const infoRef = useRef({ sessionId, userName, avatarHue });
   const voiceRef = useRef({ inVoice, micOn, camOn, isSharing });
   // Mirror props into refs inside effects (refs must not be written during render).
@@ -41,6 +46,7 @@ export function useRoomPresence({
   }, [inVoice, micOn, camOn, isSharing]);
 
   // Immediate heartbeat whenever voice state changes + periodic keepalive.
+  // A "ROOM_CLOSED" rejection means the room was auto-deleted meanwhile.
   useEffect(() => {
     let cancelled = false;
     const beat = () => {
@@ -56,7 +62,9 @@ export function useRoomPresence({
         micOn: v.micOn,
         camOn: v.camOn,
         isSharing: v.isSharing,
-      }).catch(() => undefined);
+      }).catch((err) => {
+        if (String(err).includes("ROOM_CLOSED")) setRoomClosed(true);
+      });
     };
     beat();
     const interval = setInterval(beat, HEARTBEAT_MS);
@@ -74,6 +82,20 @@ export function useRoomPresence({
     };
   }, [leave, sessionId]);
 
+  // Auto room cleanup sweep: while someone is in a room, periodically ask the
+  // backend to delete rooms whose occupants have all gone stale (crashed tabs
+  // / dropped connections never fire a proper leave). Reactive room lists
+  // remove the deleted rooms everywhere instantly.
+  const cleanupStaleRooms = useMutation(api.rooms.cleanupStaleRooms);
+  useEffect(() => {
+    if (roomClosed) return;
+    void cleanupStaleRooms({}).catch(() => undefined);
+    const interval = setInterval(() => {
+      void cleanupStaleRooms({}).catch(() => undefined);
+    }, CLEANUP_EVERY_MS);
+    return () => clearInterval(interval);
+  }, [roomClosed, cleanupStaleRooms]);
+
   // Re-render periodically so stale sessions drop off the list even when
   // Convex data hasn't changed.
   const [now, setNow] = useState(() => Date.now());
@@ -87,5 +109,5 @@ export function useRoomPresence({
   );
   const voiceSessions = participants.filter((row) => row.inVoice);
 
-  return { participants, voiceSessions };
+  return { participants, voiceSessions, roomClosed };
 }

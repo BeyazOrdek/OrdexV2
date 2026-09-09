@@ -13,9 +13,10 @@ import { useMediaSync } from "@/hooks/use-media-sync";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { avatarHue, getSessionId, type ParsedMediaLink } from "@/lib/utils-room";
 import { useMutation, useQuery } from "convex/react";
-import { Loader2 } from "lucide-react";
+import { DoorOpen, Home, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
+import { Button } from "@/components/ui/button";
 
 export default function Room() {
   const { code = "" } = useParams<{ code: string }>();
@@ -93,6 +94,7 @@ function RoomView({
   userName: string;
   userId: string;
 }) {
+  const navigate = useNavigate();
   // Voice UI state mirrored up so presence heartbeats reflect it.
   const [voiceUi, setVoiceUi] = useState({ inVoice: false, micOn: true, camOn: true, isSharing: false });
 
@@ -111,6 +113,7 @@ function RoomView({
     camOn: voiceUi.camOn,
     isSharing: voiceUi.isSharing,
   });
+  const { roomClosed } = presence;
 
   const voice = useVoice({
     roomId,
@@ -187,6 +190,31 @@ function RoomView({
       </div>
     </div>
   );
+
+  // Auto room cleanup: when the last occupant leaves, the backend deletes the
+  // room and everyone's reactive lists update. Occupants still inside get a
+  // clear "room closed" screen instead of a broken shell.
+  if (roomClosed) {
+    return (
+      <main className="ordex-bg flex min-h-screen flex-col items-center justify-center gap-4 text-center">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-[var(--ordex-accent-soft)] text-[var(--ordex-accent)]">
+          <DoorOpen className="size-7" />
+        </span>
+        <div>
+          <p className="text-lg font-semibold text-white">Oda kapandı</p>
+          <p className="mt-1 max-w-sm text-sm text-[var(--ordex-muted)]">
+            Odadaki son kişi ayrıldığı için oda otomatik olarak silindi.
+          </p>
+        </div>
+        <Button
+          onClick={() => navigate("/")}
+          className="gap-2 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)]"
+        >
+          <Home className="size-4" /> Ana sayfaya dön
+        </Button>
+      </main>
+    );
+  }
 
   return (
     <main className="flex h-screen overflow-hidden bg-background text-foreground">
