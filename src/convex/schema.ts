@@ -82,8 +82,20 @@ const schema = defineSchema(
       text: v.optional(v.string()),
       gifUrl: v.optional(v.string()),
       gifThumb: v.optional(v.string()),
+      // @mention targets resolved at send time (user ids)
+      mentionedUserIds: v.optional(v.array(v.id("users"))),
       createdAt: v.number(),
     }).index("by_room", ["roomId"]),
+
+    // Per-user room read cursor — powers unread badges in the room list and
+    // the browser tab title counter.
+    roomReads: defineTable({
+      roomId: v.id("rooms"),
+      userId: v.id("users"),
+      lastReadAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_user_room", ["userId", "roomId"]),
 
     reactions: defineTable({
       messageId: v.id("messages"),
@@ -158,8 +170,71 @@ const schema = defineSchema(
       text: v.optional(v.string()),
       gifUrl: v.optional(v.string()),
       gifThumb: v.optional(v.string()),
+      // Read receipt: set when the recipient opens the conversation.
+      readAt: v.optional(v.number()),
       createdAt: v.number(),
-    }).index("by_pair", ["senderId", "recipientId"]),
+    })
+      .index("by_pair", ["senderId", "recipientId"])
+      .index("by_recipient", ["recipientId"]),
+
+    // 1:1 voice calls (WebRTC signaling rides on callSignals below).
+    calls: defineTable({
+      callerId: v.id("users"),
+      calleeId: v.id("users"),
+      status: v.union(
+        v.literal("ringing"),
+        v.literal("active"),
+        v.literal("ended"),
+        v.literal("rejected"),
+        v.literal("missed"),
+      ),
+      callerSession: v.string(),
+      calleeSession: v.optional(v.string()),
+      createdAt: v.number(),
+      endedAt: v.optional(v.number()),
+    })
+      .index("by_caller", ["callerId"])
+      .index("by_callee", ["calleeId"]),
+
+    // WebRTC relay for calls (same shape as room `signals`, but call-scoped).
+    callSignals: defineTable({
+      callId: v.id("calls"),
+      fromSession: v.string(),
+      toSession: v.string(),
+      kind: v.union(v.literal("offer"), v.literal("answer"), v.literal("ice")),
+      payload: v.string(),
+      createdAt: v.number(),
+    })
+      .index("by_to", ["toSession"])
+      .index("by_call", ["callId"]),
+
+    // Group chats
+    groups: defineTable({
+      name: v.string(),
+      createdByUserId: v.id("users"),
+      createdAt: v.number(),
+    }),
+
+    groupMembers: defineTable({
+      groupId: v.id("groups"),
+      userId: v.id("users"),
+      joinedAt: v.number(),
+    })
+      .index("by_user", ["userId"])
+      .index("by_group", ["groupId"]),
+
+    groupMessages: defineTable({
+      groupId: v.id("groups"),
+      senderId: v.id("users"),
+      userName: v.string(),
+      text: v.optional(v.string()),
+      gifUrl: v.optional(v.string()),
+      gifThumb: v.optional(v.string()),
+      mentionedUserIds: v.optional(v.array(v.id("users"))),
+      // Read receipts: member ids that opened the group after this message.
+      readBy: v.array(v.id("users")),
+      createdAt: v.number(),
+    }).index("by_group", ["groupId"]),
   },
   {
     schemaValidation: false,

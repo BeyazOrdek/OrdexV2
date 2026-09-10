@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 export const sendMessage = mutation({
   args: {
@@ -15,6 +16,21 @@ export const sendMessage = mutation({
     const user = await ctx.db.get(userId);
     const text = args.text?.trim().slice(0, 2000) || undefined;
     if (!text && !args.gifUrl) throw new Error("Mesaj boş olamaz.");
+    // Resolve @name mentions to user ids so mention badges can fire.
+    let mentionedUserIds: Id<"users">[] | undefined;
+    if (text) {
+      const names = new Set<string>();
+      for (const m of text.matchAll(/@([\wçğıöşüÇĞİÖŞÜ.]{2,32})/gu)) {
+        names.add(m[1].toLowerCase());
+      }
+      if (names.size > 0) {
+        const users = await ctx.db.query("users").collect();
+        mentionedUserIds = users
+          .filter((u) => names.has((u.username ?? u.name ?? "").toLowerCase()))
+          .map((u) => u._id);
+        if (mentionedUserIds.length === 0) mentionedUserIds = undefined;
+      }
+    }
     await ctx.db.insert("messages", {
       roomId: args.roomId,
       userId,
@@ -22,6 +38,7 @@ export const sendMessage = mutation({
       text,
       gifUrl: args.gifUrl,
       gifThumb: args.gifThumb,
+      mentionedUserIds,
       createdAt: Date.now(),
     });
   },
