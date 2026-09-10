@@ -78,6 +78,7 @@
   --ordex-panel: #131518;
   --ordex-panel-2: #1a1d21;
   --ordex-panel-3: #232830;
+  --ordex-inset: #17191d;
   --ordex-text: #e7e8ea;
   --ordex-muted: #9aa0a8;
   --ordex-faint: #666c75;
@@ -111,6 +112,7 @@
   --ordex-panel: #0a0a0a;
   --ordex-panel-2: #111111;
   --ordex-panel-3: #1a1a1a;
+  --ordex-inset: #0e0e0e;
   --ordex-text: #f1f1f1;
   --ordex-muted: #a0a0a0;
   --ordex-faint: #6a6a6a;
@@ -144,6 +146,7 @@
   --ordex-panel: #171420;
   --ordex-panel-2: #1e1a2b;
   --ordex-panel-3: #272135;
+  --ordex-inset: #1a1725;
   --ordex-text: #e8e5f2;
   --ordex-muted: #a49cc0;
   --ordex-faint: #6f688c;
@@ -177,6 +180,7 @@
   --ordex-panel: #0b1a15;
   --ordex-panel-2: #10231c;
   --ordex-panel-3: #163027;
+  --ordex-inset: #0d201a;
   --ordex-text: #e2efe9;
   --ordex-muted: #93b3a7;
   --ordex-faint: #5f7d72;
@@ -210,6 +214,7 @@
   --ordex-panel: #0d1426;
   --ordex-panel-2: #131c33;
   --ordex-panel-3: #1a2745;
+  --ordex-inset: #101a30;
   --ordex-text: #e6ecff;
   --ordex-muted: #8fa0c5;
   --ordex-faint: #5c6b8f;
@@ -243,6 +248,7 @@
   --ordex-panel: #1b0f14;
   --ordex-panel-2: #241519;
   --ordex-panel-3: #301c22;
+  --ordex-inset: #1f1216;
   --ordex-text: #f2e4e8;
   --ordex-muted: #c096a2;
   --ordex-faint: #84606c;
@@ -292,7 +298,11 @@
   }
 }
 
-/* ÖRDEX surface utilities — theme-aware panels (replace hardcoded grays) */
+/* ÖRDEX surface utilities — theme-aware panels (replace hardcoded grays).
+   .ordex-inset is the OPAQUE recessed surface used by inputs, list rows,
+   cards and chips: opacity/blur bugs in the left lists came from layering
+   translucent bg-black/xx on translucent panels — this token is a solid
+   theme-derived color, so nested rows always keep full contrast. */
 @layer utilities {
   .ordex-panel {
     background-color: var(--ordex-panel);
@@ -316,6 +326,14 @@
   }
   .ordex-accent-text {
     color: var(--ordex-accent);
+  }
+  .ordex-inset {
+    background-color: var(--ordex-inset);
+    color: var(--ordex-text);
+  }
+  .ordex-chip {
+    background-color: var(--ordex-panel-3);
+    color: var(--ordex-muted);
   }
 }
 
