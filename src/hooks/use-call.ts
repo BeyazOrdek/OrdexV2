@@ -1,6 +1,6 @@
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { playSound, useCallSound } from "@/lib/sounds";
 import { getSessionId } from "@/lib/utils-room";
@@ -63,10 +63,17 @@ export function useCall(): CallApi {
   const deleteSignalM = useMutation(api.dms.deleteCallSignal);
 
   // Reactive subscriptions: incoming ring + my outgoing/active call mirror.
-  const incomingQuery = useQuery(api.dms.myIncomingCall, {});
-  const outgoingQuery = useQuery(api.dms.myActiveCall, {});
-  const calleeQuery = useQuery(api.dms.myActiveCalleeCall, {});
-  const signals = useQuery(api.dms.listCallSignals, { sessionId });
+  // Gated on auth: before the token is attached these queries would either
+  // error server-side or race the session — skip until signed in.
+  const { isAuthenticated } = useConvexAuth();
+  const callQueryArgs = isAuthenticated ? {} : "skip";
+  const incomingQuery = useQuery(api.dms.myIncomingCall, callQueryArgs);
+  const outgoingQuery = useQuery(api.dms.myActiveCall, callQueryArgs);
+  const calleeQuery = useQuery(api.dms.myActiveCalleeCall, callQueryArgs);
+  const signals = useQuery(
+    api.dms.listCallSignals,
+    isAuthenticated ? { sessionId } : "skip",
+  );
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);

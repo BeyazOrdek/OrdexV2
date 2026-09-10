@@ -11,6 +11,14 @@ async function requireUser(ctx: { auth: unknown }) {
   return userId;
 }
 
+/**
+ * Read-only queries return safe defaults when auth is not attached yet;
+ * a throwing reactive query crashes the whole React tree.
+ */
+async function currentUserId(ctx: { auth: unknown }): Promise<Id<"users"> | null> {
+  return await getAuthUserId(ctx as never);
+}
+
 async function publicUser(ctx: QueryCtx, userId: Id<"users">) {
   const user = await ctx.db.get(userId);
   if (!user) return { _id: userId, name: "Bilinmeyen" };
@@ -28,7 +36,8 @@ async function publicUser(ctx: QueryCtx, userId: Id<"users">) {
 export const listFriends = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     const rows = await ctx.db
       .query("friendships")
       .withIndex("by_user", (q) => q.eq("userId", me))
@@ -43,7 +52,8 @@ export const listFriends = query({
 export const listIncomingRequests = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     const rows = await ctx.db
       .query("friendships")
       .withIndex("by_user", (q) => q.eq("userId", me))
@@ -59,7 +69,8 @@ export const listIncomingRequests = query({
 export const listOutgoingRequests = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     const rows = await ctx.db
       .query("friendships")
       .withIndex("by_user", (q) => q.eq("userId", me))
@@ -75,7 +86,8 @@ export const listOutgoingRequests = query({
 export const friendshipState = query({
   args: { otherUserId: v.id("users") },
   handler: async (ctx, args) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return { state: "none" as const };
     if (me === args.otherUserId) return { state: "self" as const };
     const pair = await ctx.db
       .query("friendships")
@@ -197,7 +209,8 @@ export const removeFriend = mutation({
 export const listDms = query({
   args: { otherUserId: v.id("users") },
   handler: async (ctx, args) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     const sent = await ctx.db
       .query("dms")
       .withIndex("by_pair", (q) => q.eq("senderId", me).eq("recipientId", args.otherUserId))
@@ -216,7 +229,8 @@ export const listDms = query({
 export const listDmContacts = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     const rows = await ctx.db.query("dms").collect();
     const contactIds = new Map<string, number>();
     for (const d of rows) {

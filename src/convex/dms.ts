@@ -14,6 +14,16 @@ async function requireUser(ctx: { auth: unknown }) {
   return userId;
 }
 
+/**
+ * Read-only queries use this instead of requireUser: when the auth token is
+ * not attached yet (first paint, token refresh, reconnect) they return safe
+ * defaults instead of throwing. A throwing reactive query crashes the whole
+ * React tree — the exact "Giriş yapmalısın" preview error.
+ */
+async function currentUserId(ctx: { auth: unknown }): Promise<Id<"users"> | null> {
+  return await getAuthUserId(ctx as never);
+}
+
 async function publicUser(ctx: QueryCtx, userId: Id<"users">) {
   const user = await ctx.db.get(userId);
   if (!user) return { _id: userId, name: "Bilinmeyen" };
@@ -50,7 +60,8 @@ async function resolveMentions(ctx: QueryCtx, text: string): Promise<Id<"users">
 export const listDms = query({
   args: { otherUserId: v.id("users") },
   handler: async (ctx, args) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     const sent = await ctx.db
       .query("dms")
       .withIndex("by_pair", (q) => q.eq("senderId", me).eq("recipientId", args.otherUserId))
@@ -101,7 +112,8 @@ export const markDmsRead = mutation({
 export const listUnread = query({
   args: { currentRoomId: v.optional(v.id("rooms")) },
   handler: async (ctx, args) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return { dms: [], groups: [], roomUnread: 0, roomMentions: 0 };
     const incoming = await ctx.db
       .query("dms")
       .withIndex("by_recipient", (q) => q.eq("recipientId", me))
@@ -179,7 +191,8 @@ export const listUnread = query({
 export const listRoomUnread = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     const memberships = await ctx.db
       .query("memberships")
       .withIndex("by_user", (q) => q.eq("userId", me))
@@ -301,7 +314,8 @@ export const endCall = mutation({
 export const myIncomingCall = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return null;
     const rows = await ctx.db
       .query("calls")
       .withIndex("by_callee", (q) => q.eq("calleeId", me))
@@ -325,7 +339,8 @@ export const myIncomingCall = query({
 export const myActiveCall = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return null;
     const rows = await ctx.db
       .query("calls")
       .withIndex("by_caller", (q) => q.eq("callerId", me))
@@ -350,7 +365,8 @@ export const myActiveCall = query({
 export const myActiveCalleeCall = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return null;
     const rows = await ctx.db
       .query("calls")
       .withIndex("by_callee", (q) => q.eq("calleeId", me))
@@ -391,6 +407,8 @@ export const sendCallSignal = mutation({
 export const listCallSignals = query({
   args: { sessionId: v.string() },
   handler: async (ctx, args) => {
+    const userId = await currentUserId(ctx);
+    if (userId === null) return []; // unauthenticated: empty list, not a crash
     return await ctx.db
       .query("callSignals")
       .withIndex("by_to", (q) => q.eq("toSession", args.sessionId))
@@ -412,7 +430,8 @@ export const deleteCallSignal = mutation({
 export const listMyGroups = query({
   args: {},
   handler: async (ctx) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     const memberships = await ctx.db
       .query("groupMembers")
       .withIndex("by_user", (q) => q.eq("userId", me))
@@ -502,7 +521,8 @@ export const leaveGroup = mutation({
 export const getGroup = query({
   args: { groupId: v.id("groups") },
   handler: async (ctx, args) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return null;
     if (!(await isMember(ctx, args.groupId, me))) return null;
     const group = await ctx.db.get(args.groupId);
     if (!group) return null;
@@ -523,7 +543,8 @@ export const getGroup = query({
 export const listGroupMessages = query({
   args: { groupId: v.id("groups") },
   handler: async (ctx, args) => {
-    const me = await requireUser(ctx);
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
     if (!(await isMember(ctx, args.groupId, me))) return [];
     const rows = await ctx.db
       .query("groupMessages")
