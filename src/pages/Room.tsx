@@ -12,6 +12,7 @@ import { useVoice } from "@/hooks/use-voice";
 import { useMediaSync } from "@/hooks/use-media-sync";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { avatarHue, getSessionId, type ParsedMediaLink } from "@/lib/utils-room";
+import { reportActiveRoom } from "@/components/social/SocialOverlay";
 import { useMutation, useQuery } from "convex/react";
 import { DoorOpen, Home, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -141,6 +142,12 @@ function RoomView({
     isSharing: voiceUi.isSharing,
   });
   const { roomClosed } = presence;
+
+  // Tell the global social layer which room is open (mention/unread counting).
+  useEffect(() => {
+    reportActiveRoom(roomId);
+    return () => reportActiveRoom(undefined);
+  }, [roomId]);
 
   const voice = useVoice({
     roomId,

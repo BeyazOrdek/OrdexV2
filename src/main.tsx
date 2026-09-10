@@ -1,6 +1,7 @@
 import '@vly-ai/integrations';
 import { Toaster } from "@/components/ui/sonner";
 import { RequireAuth } from "@/components/RequireAuth";
+import { SocialOverlay } from "@/components/social/SocialOverlay";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
@@ -150,6 +151,8 @@ createRoot(document.getElementById("root")!).render(
             </Routes>
           </Suspense>
         </BrowserRouter>
+        {/* Global social layer: calls, DM/group windows, badges, sounds. */}
+        <SocialOverlay />
         <Toaster />
       </ConvexAuthProvider>
     </RootErrorBoundary>

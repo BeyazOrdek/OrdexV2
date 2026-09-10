@@ -1,24 +1,30 @@
 import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery, useAction } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
-  ArrowLeft,
   BadgeCheck,
   Check,
   CircleDot,
-  Image as ImageIcon,
   Loader2,
   MessageSquare,
+  Phone,
+  Plus,
   Search,
-  Send,
   UserMinus,
   UserPlus,
+  Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/utils-room";
+import {
+  CountBadge,
+  openCreateGroupModal,
+  openSocialView,
+  useUnreadBadges,
+} from "@/components/social/SocialOverlay";
 
 interface PublicUserLite {
   _id: string;
@@ -109,13 +115,15 @@ export function FriendsPanel() {
   const isOnline = (userId: string) => onlineMap.get(String(userId))?.online ?? false;
   const isSharing = (userId: string) => onlineMap.get(String(userId))?.isSharing ?? false;
 
+  const groups = useQuery(api.dms.listMyGroups, {}) ?? [];
+  const badges = useUnreadBadges();
+
   const sendRequest = useMutation(api.social.sendFriendRequest);
   const acceptRequest = useMutation(api.social.acceptFriendRequest);
   const removeFriend = useMutation(api.social.removeFriend);
 
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [dmWith, setDmWith] = useState<PublicUserLite | null>(null);
 
   const searchUsers = useQuery(
     api.users.searchUsers,
@@ -140,9 +148,7 @@ export function FriendsPanel() {
     }
   };
 
-  if (dmWith) {
-    return <DmView peer={dmWith} onBack={() => setDmWith(null)} />;
-  }
+  const openDm = (u: PublicUserLite) => openSocialView({ kind: "dm", peer: u });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -213,7 +219,7 @@ export function FriendsPanel() {
             {dmContacts.map((u) => (
               <button
                 key={u._id}
-                onClick={() => setDmWith(u)}
+                onClick={() => openDm(u)}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-white/5"
               >
                 <UserAvatar user={u} online={isOnline(u._id)} />
@@ -225,15 +231,44 @@ export function FriendsPanel() {
                     </span>
                   )}
                 </span>
-                <span className="shrink-0 text-[10px] text-zinc-600">
-                  {new Date(u.lastAt).toLocaleDateString("tr-TR", {
-                    day: "numeric",
-                    month: "short",
-                  })}
-                </span>
+                <CountBadge count={badges.dmByPeer.get(String(u._id)) ?? 0} />
               </button>
             ))}
           </>
+        )}
+
+        {/* Groups */}
+        <div className="flex items-center justify-between px-2 pb-1 pt-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+            <Users className="size-3" /> Gruplar ({groups.length})
+          </p>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-5 text-zinc-500 hover:bg-white/10 hover:text-zinc-100"
+            title="Grup oluştur"
+            onClick={openCreateGroupModal}
+          >
+            <Plus className="size-3.5" />
+          </Button>
+        </div>
+        {groups.map((g) => (
+          <button
+            key={g._id}
+            onClick={() => openSocialView({ kind: "group", groupId: g._id })}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-white/5"
+          >
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--ordex-accent-soft)] text-[var(--ordex-accent)]">
+              <Users className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs text-zinc-200">{g.name}</span>
+            <CountBadge count={badges.groupByGroup.get(String(g._id)) ?? 0} />
+          </button>
+        ))}
+        {groups.length === 0 && (
+          <p className="px-2 py-1 text-xs text-zinc-600">
+            Henüz grubun yok. "+" ile arkadaşlarından grup kur.
+          </p>
         )}
 
         {/* Incoming requests */}
@@ -330,13 +365,23 @@ export function FriendsPanel() {
               <UserMinus className="size-3.5" />
             </Button>
             <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 text-zinc-500 hover:bg-white/10 hover:text-emerald-400"
+              title="Sesli ara"
+              onClick={() => openSocialView({ kind: "dm", peer: u })}
+            >
+              <Phone className="size-3.5" />
+            </Button>
+            <Button
               size="sm"
               variant="secondary"
               className="h-7 shrink-0 gap-1 bg-white/10 px-2 text-[11px] text-zinc-100 hover:bg-white/15"
-              onClick={() => setDmWith(u)}
+              onClick={() => openDm(u)}
             >
               <MessageSquare className="size-3" /> DM
             </Button>
+            <CountBadge count={badges.dmByPeer.get(String(u._id)) ?? 0} />
           </div>
         ))}
       </div>
@@ -344,162 +389,3 @@ export function FriendsPanel() {
   );
 }
 
-function DmView({ peer, onBack }: { peer: PublicUserLite; onBack: () => void }) {
-  const messages = useQuery(api.social.listDms, { otherUserId: peer._id as never }) ?? [];
-  const sendDm = useMutation(api.social.sendDm);
-  const searchGifs = useAction(api.tenor.searchGifs);
-
-  const [text, setText] = useState("");
-  const [showGifs, setShowGifs] = useState(false);
-  const [gifs, setGifs] = useState<{ id: string; url: string; preview: string; desc: string }[]>([]);
-  const [gifLoading, setGifLoading] = useState(false);
-  const [gifError, setGifError] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.length]);
-
-  const loadGifs = async (q: string) => {
-    setGifLoading(true);
-    setGifError(null);
-    try {
-      const result = await searchGifs({ query: q });
-      setGifs(result.gifs);
-      if (result.error) setGifError(result.error);
-    } catch {
-      setGifError("GIF'ler yüklenemedi.");
-    } finally {
-      setGifLoading(false);
-    }
-  };
-
-  const send = (gif?: { url: string; preview: string }) => {
-    const clean = text.trim();
-    if (!clean && !gif) return;
-    setText("");
-    void sendDm({
-      recipientId: peer._id as never,
-      text: clean || undefined,
-      gifUrl: gif?.url,
-      gifThumb: gif?.preview,
-    }).catch(() => undefined);
-  };
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b border-white/5 p-3">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-7 text-zinc-400 hover:bg-white/10"
-          onClick={onBack}
-          title="Geri"
-        >
-          <ArrowLeft className="size-4" />
-        </Button>
-        <UserAvatar user={peer} size={7} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold text-zinc-100">{peer.name}</p>
-          {peer.statusMessage && (
-            <p className="truncate text-[10px] text-zinc-600">{peer.statusMessage}</p>
-          )}
-        </div>
-      </div>
-
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
-        {messages.length === 0 && (
-          <p className="py-6 text-center text-xs text-zinc-600">
-            {peer.name} ile sohbetin burada başlar.
-          </p>
-        )}
-        {messages.map((m) => (
-          <div key={m._id} className={cn("flex", m.mine ? "justify-end" : "justify-start")}>
-            <div
-              className={cn(
-                "max-w-[80%] rounded-xl px-2.5 py-1.5",
-                m.mine
-                  ? "bg-[var(--ordex-accent-soft)] text-[var(--ordex-text)]"
-                  : "bg-black/30 text-zinc-300",
-              )}
-            >
-              {m.text && <p className="whitespace-pre-wrap break-words text-xs">{m.text}</p>}
-              {m.gifUrl && (
-                <img src={m.gifThumb ?? m.gifUrl} alt="GIF" className="mt-1 max-h-36 rounded-md" loading="lazy" />
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {showGifs && (
-        <div className="border-t border-white/5 bg-black/30 p-2">
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="GIF ara..."
-              onKeyDown={(e) => e.key === "Enter" && void loadGifs((e.target as HTMLInputElement).value)}
-              className="h-8 border-white/10 bg-black/40 text-xs"
-            />
-            <Button size="sm" variant="secondary" className="h-8 px-2 text-xs" onClick={() => void loadGifs("")}>
-              Ara
-            </Button>
-            <Button size="icon" variant="ghost" className="size-8 text-zinc-500" onClick={() => setShowGifs(false)}>
-              <X className="size-4" />
-            </Button>
-          </div>
-          <div className="mt-2 grid max-h-32 grid-cols-3 gap-1.5 overflow-y-auto [scrollbar-width:thin]">
-            {gifLoading && (
-              <div className="col-span-3 flex justify-center py-3">
-                <Loader2 className="size-5 animate-spin text-zinc-500" />
-              </div>
-            )}
-            {gifError && <p className="col-span-3 text-[11px] text-amber-400">{gifError}</p>}
-            {gifs.map((g) => (
-              <button
-                key={g.id}
-                onClick={() => {
-                  send({ url: g.url, preview: g.preview });
-                  setShowGifs(false);
-                }}
-                className="overflow-hidden rounded-md border border-transparent hover:border-[var(--ordex-accent)]"
-              >
-                <img src={g.preview} alt={g.desc} className="h-16 w-full object-cover" loading="lazy" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 border-t border-white/5 p-2">
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8 shrink-0 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-          title="GIF gönder"
-          onClick={() => {
-            setShowGifs((v) => !v);
-            if (!showGifs && gifs.length === 0 && !gifLoading) void loadGifs("");
-          }}
-        >
-          <ImageIcon className="size-4" />
-        </Button>
-        <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
-          placeholder={`${peer.name} kullanıcısına mesaj...`}
-          className="h-9 border-white/10 bg-black/30 text-xs"
-        />
-        <Button
-          size="icon"
-          className="size-8 shrink-0 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)]"
-          title="Gönder"
-          onClick={() => send()}
-          disabled={!text.trim()}
-        >
-          <Send className="size-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}

@@ -1,7 +1,7 @@
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { playSound, useCallSound } from "@/lib/sounds";
 import { getSessionId } from "@/lib/utils-room";
 
@@ -14,7 +14,7 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
-export type CallState = "idle" | "outgoing-ringing" | "active" | "incoming-ringing";
+export type CallState = "idle" | "outgoing-ringing" | "active";
 
 export interface IncomingCall {
   callId: Id<"calls">;
@@ -27,6 +27,7 @@ interface CallApi {
   state: CallState;
   /** The live call's peer (null when idle). */
   peer: { name: string; avatarUrl?: string; statusMessage?: string } | null;
+  /** Someone is ringing us right now (drives the Accept/Reject popup). */
   incoming: IncomingCall | null;
   start: (peerUserId: Id<"users">, peerName: string) => Promise<void>;
   accept: () => Promise<void>;
@@ -49,7 +50,8 @@ function callAudioRoot(): HTMLElement {
 }
 
 export function useCall(): CallApi {
-  const sessionId = useRef<string>("").current || getSessionId();
+  // Stable per-tab id (same value Room uses for presence).
+  const sessionId = useMemo(() => getSessionId(), []);
   const [state, setState] = useState<CallState>("idle");
   const [peer, setPeer] = useState<CallApi["peer"]>(null);
   const [micOn, setMicOn] = useState(true);
@@ -57,17 +59,15 @@ export function useCall(): CallApi {
   const startCall = useMutation(api.dms.startCall);
   const acceptCallM = useMutation(api.dms.acceptCall);
   const endCallM = useMutation(api.dms.endCall);
+  const sendSignalM = useMutation(api.dms.sendCallSignal);
+  const deleteSignalM = useMutation(api.dms.deleteCallSignal);
 
   // Reactive subscriptions: incoming ring + my outgoing/active call mirror.
   const incomingQuery = useQuery(api.dms.myIncomingCall, {});
   const outgoingQuery = useQuery(api.dms.myActiveCall, {});
   const calleeQuery = useQuery(api.dms.myActiveCalleeCall, {});
-  const signals = useQuery(
-    api.dms.listCallSignals,
-    state === "idle" ? "skip" : { sessionId },
-  );
+  const signals = useQuery(api.dms.listCallSignals, { sessionId });
 
-  const [activeCallId, setActiveCallId] = useState<Id<"calls"> | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
@@ -78,18 +78,25 @@ export function useCall(): CallApi {
   const ignoringOfferRef = useRef(false);
   const activeCallIdRef = useRef<Id<"calls"> | null>(null);
 
-  const setCallId = useCallback((id: Id<"calls"> | null) => {
-    activeCallIdRef.current = id;
-    setActiveCallId(id);
-  }, []);
+  const sendSignal = useCallback(
+    (
+      callId: Id<"calls">,
+      toSession: string,
+      kind: "offer" | "answer" | "ice",
+      payload: string,
+    ) => {
+      void sendSignalM({ callId, fromSession: sessionId, toSession, kind, payload }).catch(
+        () => undefined,
+      );
+    },
+    [sendSignalM, sessionId],
+  );
 
-  // ---- Ring/dial loops ----
-  useCallSound(
-    state === "incoming-ringing"
-      ? "incoming"
-      : state === "outgoing-ringing"
-        ? "outgoing"
-        : null,
+  const deleteSignal = useCallback(
+    (id: Id<"callSignals">) => {
+      void deleteSignalM({ signalId: id }).catch(() => undefined);
+    },
+    [deleteSignalM],
   );
 
   const teardownPeer = useCallback(() => {
@@ -122,13 +129,13 @@ export function useCall(): CallApi {
   const finish = useCallback(
     (playHangupTone: boolean) => {
       teardownPeer();
-      setCallId(null);
+      activeCallIdRef.current = null;
       setState("idle");
       setPeer(null);
       setMicOn(true);
       if (playHangupTone) playSound("hangup");
     },
-    [teardownPeer, setCallId],
+    [teardownPeer],
   );
 
   const createPeer = useCallback(
@@ -137,12 +144,10 @@ export function useCall(): CallApi {
       pcRef.current = pc;
       politeRef.current = sessionId < remoteSession;
 
-      const send = (kind: "offer" | "answer" | "ice", payload: string) => {
-        void apiSafeSend(callId, sessionId, remoteSession, kind, payload);
-      };
-
       pc.onicecandidate = (event) => {
-        if (event.candidate) send("ice", JSON.stringify(event.candidate.toJSON()));
+        if (event.candidate) {
+          sendSignal(callId, remoteSession, "ice", JSON.stringify(event.candidate.toJSON()));
+        }
       };
 
       pc.ontrack = (event) => {
@@ -175,7 +180,9 @@ export function useCall(): CallApi {
           try {
             makingOfferRef.current = true;
             await pc.setLocalDescription();
-            if (pc.localDescription) send("offer", JSON.stringify(pc.localDescription.toJSON()));
+            if (pc.localDescription) {
+              sendSignal(callId, remoteSession, "offer", JSON.stringify(pc.localDescription.toJSON()));
+            }
           } catch {
             /* raced */
           } finally {
@@ -195,20 +202,8 @@ export function useCall(): CallApi {
       };
       return pc;
     },
-    [sessionId],
+    [sessionId, sendSignal],
   );
-
-  // Small inline helper — sends a call signal through the Convex relay.
-  const sendSignalM = useMutation(api.dms.sendCallSignal);
-  const apiSafeSend = (
-    callId: Id<"calls">,
-    fromSession: string,
-    toSession: string,
-    kind: "offer" | "answer" | "ice",
-    payload: string,
-  ) => {
-    void sendSignalM({ callId, fromSession, toSession, kind, payload }).catch(() => undefined);
-  };
 
   const ensureMic = useCallback(async () => {
     if (localStreamRef.current) return localStreamRef.current;
@@ -224,26 +219,26 @@ export function useCall(): CallApi {
 
   const start = useCallback(
     async (peerUserId: Id<"users">, peerName: string) => {
-      if (activeCallIdRef.current) return;
+      if (activeCallIdRef.current || state !== "idle") return;
       setPeer({ name: peerName });
       setState("outgoing-ringing");
       try {
         const { callId } = await startCall({ calleeId: peerUserId, callerSession: sessionId });
-        setCallId(callId);
+        activeCallIdRef.current = callId;
       } catch {
         finish(true);
       }
     },
-    [sessionId, startCall, finish, setCallId],
+    [sessionId, startCall, finish, state],
   );
 
   const accept = useCallback(async () => {
     const incoming = incomingQuery;
-    if (!incoming) return;
+    if (!incoming || activeCallIdRef.current) return;
     try {
       const stream = await ensureMic();
       await acceptCallM({ callId: incoming.callId, calleeSession: sessionId });
-      setCallId(incoming.callId);
+      activeCallIdRef.current = incoming.callId;
       setPeer({ name: incoming.peerName, avatarUrl: incoming.peerAvatar });
       setState("active");
       const pc = createPeer(incoming.callId, incoming.callerSession);
@@ -253,11 +248,13 @@ export function useCall(): CallApi {
       finish(true);
       console.warn("call accept failed", err);
     }
-  }, [incomingQuery, ensureMic, acceptCallM, sessionId, createPeer, endCallM, finish, setCallId]);
+  }, [incomingQuery, ensureMic, acceptCallM, sessionId, createPeer, endCallM, finish]);
 
   const reject = useCallback(() => {
     const incoming = incomingQuery;
-    if (incoming) void endCallM({ callId: incoming.callId, outcome: "rejected" }).catch(() => undefined);
+    if (incoming) {
+      void endCallM({ callId: incoming.callId, outcome: "rejected" }).catch(() => undefined);
+    }
     finish(false);
   }, [incomingQuery, endCallM, finish]);
 
@@ -275,21 +272,27 @@ export function useCall(): CallApi {
     setMicOn(next);
   }, []);
 
+  // ---- Ring/dial loops (derived, no effect churn) ----
+  const ringingOut = state === "outgoing-ringing";
+  const ringingIn = state === "idle" && incomingQuery !== undefined && incomingQuery !== null;
+  useCallSound(ringingIn ? "incoming" : ringingOut ? "outgoing" : null);
+
   // ---- Reactive state transitions ----
 
   // Outgoing call got accepted (calleeSession appears) → go active + dial.
   useEffect(() => {
-    if (state !== "outgoing-ringing" || !outgoingQuery) return;
-    if (outgoingQuery.status === "active" && outgoingQuery.calleeSession && activeCallIdRef.current) {
+    if (
+      state === "outgoing-ringing" &&
+      outgoingQuery?.status === "active" &&
+      outgoingQuery.calleeSession &&
+      activeCallIdRef.current
+    ) {
       setState("active");
       setPeer((p) => p ?? { name: outgoingQuery.peer.name });
       void (async () => {
         try {
           const stream = await ensureMic();
-          const pc = createPeer(
-            outgoingQuery._id,
-            outgoingQuery.calleeSession as string,
-          );
+          const pc = createPeer(outgoingQuery._id, outgoingQuery.calleeSession as string);
           for (const track of stream.getTracks()) pc.addTrack(track, stream);
         } catch (err) {
           console.warn("caller mic failed", err);
@@ -300,7 +303,7 @@ export function useCall(): CallApi {
     }
   }, [state, outgoingQuery, ensureMic, createPeer, endCallM, finish]);
 
-  // Call disappeared from the server (rejected/timed out/cleaned) while ringing.
+  // Outgoing call vanished from the server (rejected / timed out).
   useEffect(() => {
     if (state === "outgoing-ringing" && outgoingQuery === null && activeCallIdRef.current) {
       finish(true);
@@ -310,21 +313,22 @@ export function useCall(): CallApi {
   // My active call (either side) ended remotely.
   useEffect(() => {
     if (state !== "active" || !activeCallIdRef.current) return;
-    const mine = outgoingQuery?._id === activeCallIdRef.current;
+    const asCaller = outgoingQuery?._id === activeCallIdRef.current;
     const asCallee = calleeQuery?._id === activeCallIdRef.current;
-    if (mine && outgoingQuery?.status !== "active" && outgoingQuery?.status !== "ringing") finish(false);
-    if (!mine && asCallee && calleeQuery?.status !== "active") finish(false);
-    if (!mine && !asCallee && !outgoingQuery && !calleeQuery) finish(false);
+    if (asCaller && outgoingQuery?.status !== "active") finish(false);
+    else if (asCallee && calleeQuery?.status !== "active") finish(false);
+    else if (!asCaller && !asCallee && !outgoingQuery && !calleeQuery) finish(false);
   }, [state, outgoingQuery, calleeQuery, finish]);
 
   // ---- Consume call signals ----
   useEffect(() => {
-    if (state === "idle" || !signals || signals.length === 0 || !activeCallIdRef.current) return;
+    if (!signals || signals.length === 0 || !activeCallIdRef.current) return;
     for (const signal of signals) {
       void (async () => {
         const pc = pcRef.current;
+        const callId = activeCallIdRef.current;
         try {
-          if (!pc) return;
+          if (!pc || !callId) return;
           if (signal.kind === "offer" || signal.kind === "answer") {
             const desc = JSON.parse(signal.payload) as RTCSessionDescriptionInit;
             const offerCollision =
@@ -338,7 +342,7 @@ export function useCall(): CallApi {
             if (desc.type === "offer") {
               await pc.setLocalDescription();
               if (pc.localDescription) {
-                apiSafeSend(activeCallIdRef.current!, sessionId, signal.fromSession, "answer", JSON.stringify(pc.localDescription.toJSON()));
+                sendSignal(callId, signal.fromSession, "answer", JSON.stringify(pc.localDescription.toJSON()));
               }
             }
           } else if (signal.kind === "ice") {
@@ -352,22 +356,13 @@ export function useCall(): CallApi {
         } catch (err) {
           console.warn("call signal failed", signal.kind, err);
         } finally {
-          void deleteSignalSafe(signal._id);
+          deleteSignal(signal._id);
         }
       })();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signals, state, sessionId]);
+  }, [signals, sendSignal, deleteSignal]);
 
-  const deleteSignalM = useMutation(api.dms.deleteCallSignal);
-  const deleteSignalSafe = useCallback(
-    (id: Id<"callSignals">) => {
-      void deleteSignalM({ signalId: id }).catch(() => undefined);
-    },
-    [deleteSignalM],
-  );
-
-  // Unmount safety: kill mic + peer when the app goes away.
+  // Unmount safety: kill mic + peer when the hook goes away.
   useEffect(() => () => teardownPeer(), [teardownPeer]);
 
   const incoming: IncomingCall | null =
@@ -379,12 +374,6 @@ export function useCall(): CallApi {
           peerStatus: incomingQuery.peerStatus,
         }
       : null;
-
-  // Surface ringing state even when my local transition is slower than the DB.
-  useEffect(() => {
-    if (state === "idle" && incomingQuery) setState("incoming-ringing");
-    if (state === "incoming-ringing" && !incomingQuery) setState("idle");
-  }, [state, incomingQuery]);
 
   return {
     state,

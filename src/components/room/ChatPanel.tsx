@@ -2,9 +2,10 @@ import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
 import { avatarHue, initials } from "@/lib/utils-room";
 import { useAction, useMutation, useQuery } from "convex/react";
-import { Image as ImageIcon, Loader2, Search, Send, SmilePlus, UserPlus, X } from "lucide-react";
+import { Image as ImageIcon, Loader2, MessageSquare, Search, Send, SmilePlus, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { badgeMeta } from "@/lib/profile";
+import { MentionText, openSocialView } from "@/components/social/SocialOverlay";
 
 const QUICK_EMOJIS = ["👍", "😂", "❤️", "🔥", "😮", "😢", "🎉", "👀"];
 
@@ -65,6 +67,13 @@ export function ChatPanel({ roomId }: { roomId: string }) {
   const toggleReaction = useMutation(api.chat.toggleReaction);
   const searchGifs = useAction(api.tenor.searchGifs);
   const sendFriendRequest = useMutation(api.social.sendFriendRequest);
+  const markRoomRead = useMutation(api.dms.markRoomRead);
+
+  // Read cursor: keep this room's unread badge (tab title + list) cleared
+  // while the panel is open and when new messages stream in.
+  useEffect(() => {
+    void markRoomRead({ roomId: roomId as never }).catch(() => undefined);
+  }, [roomId, markRoomRead, messages.length]);
 
   const addFriendByName = (name: string) => {
     void sendFriendRequest({ name })
@@ -173,6 +182,27 @@ export function ChatPanel({ roomId }: { roomId: string }) {
                         >
                           <UserPlus className="size-3.5" /> Arkadaş olarak ekle
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="mt-1.5 h-8 w-full justify-start gap-2 bg-white/10 text-xs text-zinc-100 hover:bg-white/15"
+                          onClick={() => {
+                            const p = profiles.get(String(m.userId));
+                            openSocialView({
+                              kind: "dm",
+                              peer: {
+                                _id: String(m.userId),
+                                name: m.userName,
+                                avatarUrl: p?.avatarUrl,
+                                statusMessage: p?.statusMessage,
+                                nameColor: p?.nameColor,
+                                badges: p?.badges,
+                              },
+                            });
+                          }}
+                        >
+                          <MessageSquare className="size-3.5" /> DM at
+                        </Button>
                         <p className="px-1 pt-1.5 text-[10px] text-zinc-600">
                           DM için sol paneldeki "Arkadaşlar" sekmesini kullan.
                         </p>
@@ -195,9 +225,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
                   </span>
                 </div>
                 {m.text && (
-                  <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-300">
-                    {m.text}
-                  </p>
+                  <MentionText text={m.text} selfName={user?.name ?? undefined} />
                 )}
                 {m.gifUrl && (
                   <img

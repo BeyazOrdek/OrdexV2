@@ -60,7 +60,7 @@ function Avatar({ user, size = 8 }: { user: PublicUserLite; size?: number }) {
 }
 
 /** Render message text with @name mentions highlighted. */
-function MentionText({ text, selfName }: { text: string; selfName?: string }) {
+export function MentionText({ text, selfName }: { text: string; selfName?: string }) {
   const parts = useMemo(() => text.split(/(@[\wçğıöşüÇĞİÖŞÜ.]{2,32})/gu), [text]);
   return (
     <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-300">
@@ -524,9 +524,8 @@ function CreateGroupModal({
 // ---------- Incoming call popup + in-call bar ----------
 
 function CallUi({ call }: { call: ReturnType<typeof useCall> }) {
-  if (call.state === "idle" || !call.peer) return null;
-
-  if (call.state === "incoming-ringing" && call.incoming) {
+  // Incoming ring popup — driven entirely by the reactive incoming query.
+  if (call.incoming) {
     return (
       <div className="fixed left-1/2 top-4 z-[9990] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2">
         <div className="ordex-panel-2 flex items-center gap-3 rounded-xl border border-white/10 p-3 shadow-2xl shadow-black/50">
@@ -558,8 +557,7 @@ function CallUi({ call }: { call: ReturnType<typeof useCall> }) {
     );
   }
 
-  const label =
-    call.state === "outgoing-ringing" ? "Aranıyor..." : call.state === "incoming-ringing" ? "Gelen arama..." : "Görüşme sürüyor";
+  const label = call.state === "outgoing-ringing" ? "Aranıyor..." : "Görüşme sürüyor";
 
   return (
     <div className="fixed bottom-20 left-1/2 z-[9990] w-[calc(100%-2rem)] max-w-xs -translate-x-1/2 md:bottom-4 md:left-4 md:translate-x-0">
@@ -598,12 +596,36 @@ function CallUi({ call }: { call: ReturnType<typeof useCall> }) {
   );
 }
 
+// ---------- Active-room store (Room pages report where the user is) ----------
+
+let activeRoom: Id<"rooms"> | undefined;
+const roomListeners = new Set<(id: Id<"rooms"> | undefined) => void>();
+
+/** Room.tsx calls this so mention/unread counting knows the open room. */
+export function reportActiveRoom(id: Id<"rooms"> | undefined) {
+  activeRoom = id;
+  for (const l of roomListeners) l(id);
+}
+
+function useActiveRoom(): Id<"rooms"> | undefined {
+  const [id, setId] = useState<Id<"rooms"> | undefined>(activeRoom);
+  useEffect(() => {
+    const l = (n: Id<"rooms"> | undefined) => setId(n);
+    roomListeners.add(l);
+    return () => {
+      roomListeners.delete(l);
+    };
+  }, []);
+  return id;
+}
+
 // ---------- Notification watcher + tab title ----------
 
-function SocialWatcher({ currentRoomId }: { currentRoomId?: Id<"rooms"> }) {
-  const { user } = useAuth();
+function SocialWatcher() {
+  const currentRoomId = useActiveRoom();
   const unread = useQuery(api.dms.listUnread, currentRoomId ? { currentRoomId } : {});
   const incoming = useQuery(api.dms.myIncomingCall, {});
+  const markRoomRead = useMutation(api.dms.markRoomRead);
 
   // Browser tab title: (n) ÖRDEX
   const dmTotal = (unread?.dms ?? []).reduce((acc, d) => acc + d.count, 0);
@@ -615,6 +637,12 @@ function SocialWatcher({ currentRoomId }: { currentRoomId?: Id<"rooms"> }) {
     document.title = total > 0 ? `(${total}) ${base}` : base;
   }, [dmTotal, groupTotal, roomTotal]);
 
+  // Open room counts as read (the watcher runs only on room pages' view).
+  useEffect(() => {
+    if (!currentRoomId) return;
+    void markRoomRead({ roomId: currentRoomId }).catch(() => undefined);
+  }, [currentRoomId, markRoomRead, unread?.roomUnread, unread?.roomMentions]);
+
   // Bip on brand-new incoming DMs (window-level; the DM view bip handles the open chat).
   const lastDmLatestRef = useRef(0);
   useEffect(() => {
@@ -625,7 +653,6 @@ function SocialWatcher({ currentRoomId }: { currentRoomId?: Id<"rooms"> }) {
     lastDmLatestRef.current = latest;
   }, [unread, incoming]);
 
-  void user;
   return null;
 }
 
@@ -642,7 +669,13 @@ export function openSocialView(view: SocialView) {
   openSocialViewExternal?.(view);
 }
 
-export function SocialOverlay({ currentRoomId }: { currentRoomId?: Id<"rooms"> }) {
+/** Imperative handle for the create-group modal. */
+let openCreateGroupExternal: (() => void) | null = null;
+export function openCreateGroupModal() {
+  openCreateGroupExternal?.();
+}
+
+export function SocialOverlay() {
   useSoundBus();
   const call = useCall();
   const [view, setView] = useState<SocialView>(null);
@@ -659,9 +692,16 @@ export function SocialOverlay({ currentRoomId }: { currentRoomId?: Id<"rooms"> }
     void call.start(peer._id as Id<"users">, peer.name);
   };
 
+  useEffect(() => {
+    openCreateGroupExternal = () => setCreateGroupOpen(true);
+    return () => {
+      openCreateGroupExternal = null;
+    };
+  }, []);
+
   return (
     <>
-      <SocialWatcher currentRoomId={currentRoomId} />
+      <SocialWatcher />
       <CallUi call={call} />
 
       {/* DM / Group window (slide-over above everything) */}
@@ -717,7 +757,8 @@ export interface BadgeInfo {
   roomMentions: number;
 }
 
-export function useUnreadBadges(currentRoomId?: Id<"rooms">): BadgeInfo {
+export function useUnreadBadges(): BadgeInfo {
+  const currentRoomId = useActiveRoom();
   const unread = useQuery(api.dms.listUnread, currentRoomId ? { currentRoomId } : {});
   return useMemo(
     () => ({

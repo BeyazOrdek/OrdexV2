@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
 import { SettingsModal } from "@/components/SettingsModal";
+import { CountBadge, useUnreadBadges } from "@/components/social/SocialOverlay";
 import { FriendsPanel } from "@/components/social/FriendsPanel";
 
 type Tab = "rooms" | "friends";
@@ -34,6 +35,10 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
   const myRooms = useQuery(api.rooms.listMyRooms, {}) ?? [];
   const publicRooms = useQuery(api.rooms.listPublicRooms, {}) ?? [];
   const joinRoom = useMutation(api.rooms.joinRoom);
+  const badges = useUnreadBadges();
+  const roomBadges = useQuery(api.dms.listRoomUnread, {}) ?? [];
+  const unreadFor = (roomId: string) =>
+    roomBadges.find((r) => String(r.roomId) === String(roomId));
 
   const goJoin = () => {
     const clean = code.trim().toUpperCase();
@@ -72,13 +77,17 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
           <Hash className="size-3.5" /> Odalar
         </button>
         <button
+          data-ordex-friends-tab
           onClick={() => setTab("friends")}
           className={cn(
-            "flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-semibold transition-colors",
+            "relative flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs font-semibold transition-colors",
             tab === "friends" ? "bg-white/10 text-white" : "text-zinc-500 hover:text-zinc-300",
           )}
         >
           <Users className="size-3.5" /> Arkadaşlar
+          {(badges.dmTotal > 0 || badges.groupTotal > 0) && (
+            <span className="absolute right-1.5 top-1 flex size-2 items-center justify-center rounded-full bg-red-600" />
+          )}
         </button>
       </div>
 
@@ -129,6 +138,8 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
                   name={room.name}
                   secret={room.visibility === "secret"}
                   active={room.code === activeCode}
+                  badge={unreadFor(room._id)?.count ?? 0}
+                  mention={unreadFor(room._id)?.mentions ?? 0}
                 />
               ) : null,
             )}
@@ -140,7 +151,14 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
               .filter((r) => !myRooms.some((m) => m?._id === r._id))
               .slice(0, 12)
               .map((room) => (
-                <RoomLink key={room._id} code={room.code} name={room.name} active={room.code === activeCode} />
+                <RoomLink
+                  key={room._id}
+                  code={room.code}
+                  name={room.name}
+                  active={room.code === activeCode}
+                  badge={unreadFor(room._id)?.count ?? 0}
+                  mention={unreadFor(room._id)?.mentions ?? 0}
+                />
               ))}
             {publicRooms.length === 0 && (
               <p className="px-2 py-1 text-xs text-zinc-600">Keşfedilecek oda yok.</p>
@@ -210,11 +228,15 @@ function RoomLink({
   name,
   secret,
   active,
+  badge,
+  mention,
 }: {
   code: string;
   name: string;
   secret?: boolean;
   active: boolean;
+  badge?: number;
+  mention?: number;
 }) {
   const navigate = useNavigate();
   return (
@@ -231,6 +253,8 @@ function RoomLink({
         <Hash className="size-4 shrink-0 text-zinc-500" />
       )}
       <span className="min-w-0 flex-1 truncate">{name}</span>
+      {(mention ?? 0) > 0 && <span title="Sana @bahsetti" className="shrink-0 text-xs">@</span>}
+      <CountBadge count={badge ?? 0} />
       <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-zinc-500">
         {code}
       </span>
