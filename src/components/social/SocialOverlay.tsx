@@ -26,7 +26,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -597,6 +597,60 @@ function CallUi({ call }: { call: ReturnType<typeof useCall> }) {
   );
 }
 
+// ---------- Global call-state store (room voice panels stay in sync) ----------
+
+/**
+ * Single source of truth for "a 1:1 call is ringing/active right now".
+ * Room-side panels (RightPanel voice card, GamingStage control bar) read this
+ * through `useCallState()` and swap their join button for an end-call button,
+ * so the bottom-left call card and the right-bottom voice card can never
+ * show conflicting "join voice" vs "call running" states.
+ */
+interface CallStateSnapshot {
+  /** Call ringing or active right now. */
+  active: boolean;
+  /** Peer display name for the compact override card. */
+  peerName: string;
+  /** True while ringing (outgoing or incoming) — drives the pulse animation. */
+  ringing: boolean;
+}
+
+let callState: CallStateSnapshot = { active: false, peerName: "", ringing: false };
+const callStateListeners = new Set<() => void>();
+
+function setCallState(next: CallStateSnapshot) {
+  if (
+    callState.active === next.active &&
+    callState.peerName === next.peerName &&
+    callState.ringing === next.ringing
+  ) {
+    return;
+  }
+  callState = next;
+  for (const l of callStateListeners) l();
+}
+
+export function useCallState(): CallStateSnapshot {
+  return useSyncExternalStore(
+    (onChange) => {
+      callStateListeners.add(onChange);
+      return () => {
+        callStateListeners.delete(onChange);
+      };
+    },
+    () => callState,
+    () => callState,
+  );
+}
+
+/** Latest useCall actions, called from anywhere via `endActiveCall()`. */
+let endActiveCallExternal: (() => void) | null = null;
+
+/** Ends the current 1:1 call (reject when ringing, hang up when active). */
+export function endActiveCall() {
+  endActiveCallExternal?.();
+}
+
 // ---------- Active-room store (Room pages report where the user is) ----------
 
 let activeRoom: Id<"rooms"> | undefined;
@@ -686,6 +740,30 @@ export function SocialOverlay() {
     openSocialViewExternal = setView;
     return () => {
       openSocialViewExternal = null;
+    };
+  }, []);
+
+  // Publish call state to room voice panels (they read `useCallState`).
+  useEffect(() => {
+    setCallState({
+      active: call.state !== "idle" || call.incoming !== null,
+      peerName: call.incoming?.peerName ?? call.peer?.name ?? "",
+      ringing: call.incoming !== null || call.state === "outgoing-ringing",
+    });
+  }, [call.state, call.incoming, call.peer]);
+
+  // Imperative end-call handle: reject incoming, hang up ongoing.
+  const callRef = useRef(call);
+  useEffect(() => {
+    callRef.current = call;
+  }, [call]);
+  useEffect(() => {
+    endActiveCallExternal = () => {
+      if (callRef.current.incoming) callRef.current.reject();
+      else callRef.current.hangUp();
+    };
+    return () => {
+      endActiveCallExternal = null;
     };
   }, []);
 

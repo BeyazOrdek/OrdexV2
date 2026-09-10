@@ -10,6 +10,8 @@ import {
   ListVideo,
   Mic,
   MicOff,
+  Phone,
+  PhoneOff,
   Play,
   Trash2,
   Users,
@@ -20,6 +22,7 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { endActiveCall, useCallState } from "@/components/social/SocialOverlay";
 
 interface RightPanelProps {
   roomId: string;
@@ -229,48 +232,108 @@ export function RightPanel({
         </div>
       </div>
 
-      {/* Voice controls */}
-      <div className="border-t border-white/5 bg-black/30 p-3">
-        {inVoice ? (
-          <div className="flex items-center gap-2">
-            <Button
-              size="icon"
-              variant={micOn ? "secondary" : "destructive"}
-              className="size-9 shrink-0"
-              title={micOn ? "Mikrofonu kapat" : "Mikrofonu aç"}
-              onClick={onToggleMic}
-            >
-              {micOn ? <Mic className="size-4" /> : <MicOff className="size-4" />}
-            </Button>
-            <Button
-              size="icon"
-              variant={camOn ? "secondary" : "destructive"}
-              className="size-9 shrink-0"
-              title={camOn ? "Kamerayı kapat" : "Kamerayı aç"}
-              onClick={onToggleCam}
-            >
-              {camOn ? <Video className="size-4" /> : <VideoOff className="size-4" />}
-            </Button>
-            <Button
-              onClick={onLeaveVoice}
-              variant="destructive"
-              className="h-9 flex-1 text-xs"
-            >
-              Kanaldan ayrıl
-            </Button>
-          </div>
-        ) : (
-          <Button
-            onClick={onJoinVoice}
-            className="h-9 w-full gap-2 bg-[var(--ordex-accent)] text-xs text-white hover:bg-[var(--ordex-accent-hover)]"
-          >
-            <Headphones className="size-4" /> Sesli kanala katıl
-          </Button>
-        )}
-        <p className="mt-2 text-center text-[10px] text-zinc-600">
-          {user?.name ?? "Misafir"} olarak bağlısın
-        </p>
-      </div>
+      {/* Voice controls — synced with 1:1 calls: while a call rings or runs,
+          the join button swaps for an end-call card so the two bottom panels
+          can never fight for the same mic/UI state. */}
+      <VoiceFooter inVoice={inVoice} micOn={micOn} camOn={camOn} onJoinVoice={onJoinVoice} onLeaveVoice={onLeaveVoice} onToggleMic={onToggleMic} onToggleCam={onToggleCam} />
+      <p className="-mt-1 pb-2 text-center text-[10px] text-zinc-600">
+        {user?.name ?? "Misafir"} olarak bağlısın
+      </p>
     </aside>
+  );
+}
+
+/**
+ * Bottom card of the right panel. Reads the global 1:1 call state:
+ * - call ringing/active → red/amber end-call card (join is blocked)
+ * - otherwise → normal voice channel join/controls
+ * Both panels switch in the same render pass, so they always agree.
+ */
+function VoiceFooter({
+  inVoice,
+  micOn,
+  camOn,
+  onJoinVoice,
+  onLeaveVoice,
+  onToggleMic,
+  onToggleCam,
+}: Pick<
+  RightPanelProps,
+  "inVoice" | "micOn" | "camOn" | "onJoinVoice" | "onLeaveVoice" | "onToggleMic" | "onToggleCam"
+>) {
+  const call = useCallState();
+
+  if (call.active) {
+    return (
+      <div className="border-t border-white/5 bg-black/30 p-3">
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2">
+          <span
+            className={cn(
+              "flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-500/20",
+              call.ringing && "animate-pulse",
+            )}
+          >
+            <Phone className="size-3.5 text-amber-400" />
+          </span>
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block truncate text-xs font-semibold text-zinc-100">
+              {call.peerName || "Arama"}
+            </span>
+            <span className="block text-[10px] text-amber-300/90">
+              {call.ringing ? "Aranıyor... sesli kanal kilitli" : "Görüşme sürüyor"}
+            </span>
+          </span>
+          <Button
+            size="icon"
+            className="size-8 shrink-0 bg-red-600 text-white hover:bg-red-500"
+            title={call.ringing ? "Aramayı reddet" : "Aramayı bitir"}
+            onClick={endActiveCall}
+          >
+            <PhoneOff className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-white/5 bg-black/30 p-3">
+      {inVoice ? (
+        <div className="flex items-center gap-2">
+          <Button
+            size="icon"
+            variant={micOn ? "secondary" : "destructive"}
+            className="size-9 shrink-0"
+            title={micOn ? "Mikrofonu kapat" : "Mikrofonu aç"}
+            onClick={onToggleMic}
+          >
+            {micOn ? <Mic className="size-4" /> : <MicOff className="size-4" />}
+          </Button>
+          <Button
+            size="icon"
+            variant={camOn ? "secondary" : "destructive"}
+            className="size-9 shrink-0"
+            title={camOn ? "Kamerayı kapat" : "Kamerayı aç"}
+            onClick={onToggleCam}
+          >
+            {camOn ? <Video className="size-4" /> : <VideoOff className="size-4" />}
+          </Button>
+          <Button
+            onClick={onLeaveVoice}
+            variant="destructive"
+            className="h-9 flex-1 text-xs"
+          >
+            Kanaldan ayrıl
+          </Button>
+        </div>
+      ) : (
+        <Button
+          onClick={onJoinVoice}
+          className="h-9 w-full gap-2 bg-[var(--ordex-accent)] text-xs text-white hover:bg-[var(--ordex-accent-hover)]"
+        >
+          <Headphones className="size-4" /> Sesli kanala katıl
+        </Button>
+      )}
+    </div>
   );
 }

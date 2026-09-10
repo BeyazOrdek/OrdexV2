@@ -7,6 +7,7 @@ import {
   MonitorUp,
   PanelLeftClose,
   PanelRightClose,
+  PhoneOff,
   Radio,
   Square,
   Users,
@@ -14,6 +15,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { VoiceParticipant } from "@/hooks/use-voice";
+import { endActiveCall, useCallState } from "@/components/social/SocialOverlay";
 
 interface GamingStageProps {
   roomName: string;
@@ -58,6 +60,9 @@ export function GamingStage({
   const previewRef = useRef<HTMLVideoElement | null>(null);
   const remoteRef = useRef<HTMLVideoElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // 1:1 call status (global) — swaps the voice join button for an end-call
+  // button while a call rings or runs, so both bottom panels stay in sync.
+  const callState = useCallState();
 
   // Fullscreen state sync (user can exit with Esc).
   useEffect(() => {
@@ -211,6 +216,18 @@ export function GamingStage({
                 Sesli kanaldan ayrıl
               </Button>
             </>
+          ) : callState.active ? (
+            /* 1:1 call in progress: join is blocked and mirrored as end-call,
+               keeping this bar in sync with the bottom-left call card. */
+            <Button
+              onClick={endActiveCall}
+              variant="outline"
+              className="h-9 shrink-0 gap-2 border-red-500/40 bg-red-500/10 text-xs text-red-300 hover:bg-red-500/20"
+              title={callState.ringing ? "Aramayı reddet" : "Aramayı bitir"}
+            >
+              <PhoneOff className="size-4" />
+              {callState.ringing ? "Aramayı reddet" : "Aramayı bitir"}
+            </Button>
           ) : (
             <Button
               onClick={onJoinVoice}
