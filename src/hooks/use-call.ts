@@ -200,9 +200,23 @@ export function useCall(): CallApi {
           }
         }
       };
+
+      // Hard failure watchdog: if the connection is still "failed" after the
+      // restart grace period, actually end the call instead of leaving a dead
+      // "Görüşme sürüyor" bar hanging on screen forever.
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState !== "failed") return;
+        window.setTimeout(() => {
+          if (pcRef.current === pc && pc.connectionState === "failed") {
+            const id = activeCallIdRef.current;
+            if (id) void endCallM({ callId: id, outcome: "ended" }).catch(() => undefined);
+            finish(true);
+          }
+        }, 5000);
+      };
       return pc;
     },
-    [sessionId, sendSignal],
+    [sessionId, sendSignal, endCallM, finish],
   );
 
   const ensureMic = useCallback(async () => {

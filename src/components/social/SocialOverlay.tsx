@@ -557,6 +557,11 @@ function CallUi({ call }: { call: ReturnType<typeof useCall> }) {
     );
   }
 
+  // No call in progress: render nothing. (Without this guard the bar used to
+  // show forever with the fallback "Arama / Görüşme sürüyor" text even when
+  // idle — a phantom call UI with no actual call behind it.)
+  if (call.state === "idle") return null;
+
   const label = call.state === "outgoing-ringing" ? "Aranıyor..." : "Görüşme sürüyor";
   const peerName = call.peer?.name ?? "Arama";
 

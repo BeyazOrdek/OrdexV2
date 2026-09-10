@@ -331,9 +331,10 @@ export const myActiveCall = query({
       .withIndex("by_caller", (q) => q.eq("callerId", me))
       .order("desc")
       .take(5);
-    const live = rows.find(
-      (c) => (c.status === "ringing" || c.status === "active") && Date.now() - c.createdAt < 120_000,
-    );
+    // Any non-terminated call counts as live: the 120s window used here
+    // before force-dropped real calls at the 2-minute mark (the client saw
+    // both mirrors go null and hung up mid-conversation).
+    const live = rows.find((c) => c.status === "ringing" || c.status === "active");
     if (!live) return null;
     return {
       _id: live._id,
@@ -355,7 +356,8 @@ export const myActiveCalleeCall = query({
       .withIndex("by_callee", (q) => q.eq("calleeId", me))
       .order("desc")
       .take(5);
-    const live = rows.find((c) => c.status === "active" && Date.now() - c.createdAt < 120_000);
+    // Same fix as myActiveCall: no artificial age cutoff for live calls.
+    const live = rows.find((c) => c.status === "active");
     if (!live) return null;
     return {
       _id: live._id,
