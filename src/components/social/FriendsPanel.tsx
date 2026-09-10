@@ -77,7 +77,7 @@ function UserAvatar({
       {online !== undefined && (
         <span
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--ordex-panel-2, #1a1d21)]",
+            "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--ordex-panel-2)]",
             online ? "bg-emerald-400" : "bg-zinc-600",
           )}
           style={{ width: `${Math.max(7, size * 1.5)}px`, height: `${Math.max(7, size * 1.5)}px` }}

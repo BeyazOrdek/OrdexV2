@@ -790,7 +790,7 @@ export function SocialOverlay() {
 
       {/* DM / Group window (slide-over above everything) */}
       {view && (
-        <div className="fixed inset-y-0 right-0 z-[9985] flex w-full max-w-sm flex-col border-l border-white/10 bg-[var(--ordex-panel, #101214)] shadow-2xl shadow-black/60 md:inset-y-0">
+        <div className="ordex-panel fixed inset-y-0 right-0 z-[9985] flex w-full max-w-sm flex-col border-l border-white/10 shadow-2xl shadow-black/60 md:inset-y-0">
           {view.kind === "dm" ? (
             <DmView peer={view.peer} onBack={() => setView(null)} onCall={startCallTo} />
           ) : (
@@ -806,7 +806,7 @@ export function SocialOverlay() {
         <div className="fixed bottom-20 right-3 z-[9980] flex flex-col gap-2 md:bottom-4">
           <Button
             size="icon"
-            className="size-10 rounded-full border border-white/10 bg-[var(--ordex-panel-2, #1a1d21)] text-zinc-300 shadow-lg hover:text-white"
+            className="ordex-panel-2 size-10 rounded-full border border-white/10 text-zinc-300 shadow-lg hover:text-white"
             title="Grup oluştur"
             onClick={() => setCreateGroupOpen(true)}
           >
@@ -814,7 +814,7 @@ export function SocialOverlay() {
           </Button>
           <Button
             size="icon"
-            className="size-10 rounded-full border border-white/10 bg-[var(--ordex-panel-2, #1a1d21)] text-zinc-300 shadow-lg hover:text-white"
+            className="ordex-panel-2 size-10 rounded-full border border-white/10 text-zinc-300 shadow-lg hover:text-white"
             title="Yeni DM"
             onClick={() => {
               const el = document.querySelector<HTMLButtonElement>("[data-ordex-friends-tab]");
