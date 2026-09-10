@@ -558,6 +558,7 @@ function CallUi({ call }: { call: ReturnType<typeof useCall> }) {
   }
 
   const label = call.state === "outgoing-ringing" ? "Aranıyor..." : "Görüşme sürüyor";
+  const peerName = call.peer?.name ?? "Arama";
 
   return (
     <div className="fixed bottom-20 left-1/2 z-[9990] w-[calc(100%-2rem)] max-w-xs -translate-x-1/2 md:bottom-4 md:left-4 md:translate-x-0">
@@ -571,7 +572,7 @@ function CallUi({ call }: { call: ReturnType<typeof useCall> }) {
           <Phone className="size-4 text-emerald-400" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-zinc-100">{call.peer.name}</p>
+          <p className="truncate text-sm font-semibold text-zinc-100">{peerName}</p>
           <p className="text-[11px] text-zinc-500">{label}</p>
         </div>
         <Button
