@@ -80,13 +80,13 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
                   : "Oda herkese açık listelerde de görünecek."}
               </DialogDescription>
             </DialogHeader>
-            <div className="flex items-center justify-center rounded-lg border border-white/10 bg-black/40 py-4">
+            <div className="ordex-inset flex items-center justify-center rounded-lg border border-white/10 py-4">
               <span className="font-mono text-2xl font-bold tracking-[0.35em] text-white">
                 {createdCode}
               </span>
             </div>
             <DialogFooter className="gap-2">
-              <Button variant="outline" className="border-white/10 bg-black/20 text-xs hover:bg-white/5" onClick={copyLink}>
+              <Button variant="outline" className="ordex-inset border-white/10 text-xs hover:bg-[var(--ordex-panel-3)]" onClick={copyLink}>
                 Linki kopyala
               </Button>
               <Button
@@ -109,7 +109,7 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
               onKeyDown={(e) => e.key === "Enter" && !creating && void create()}
               placeholder="Oda adı (örn. Film Gecesi)"
               maxLength={60}
-              className="h-10 border-white/10 bg-black/30 text-sm placeholder:text-zinc-600"
+              className="ordex-inset h-10 border-white/10 text-sm placeholder:text-zinc-500"
             />
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -119,7 +119,7 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
                   "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
                   visibility === "public"
                     ? "border-[var(--ordex-accent)] bg-[var(--ordex-accent-soft)]"
-                    : "border-white/10 bg-black/20 hover:bg-white/5",
+                    : "ordex-inset border-white/10 hover:bg-[var(--ordex-panel-3)]",
                 )}
               >
                 <Globe2 className="size-4 text-[var(--ordex-accent)]" />
@@ -135,7 +135,7 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
                   "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
                   visibility === "secret"
                     ? "border-[var(--ordex-accent)] bg-[var(--ordex-accent-soft)]"
-                    : "border-white/10 bg-black/20 hover:bg-white/5",
+                    : "ordex-inset border-white/10 hover:bg-[var(--ordex-panel-3)]",
                 )}
               >
                 <Lock className="size-4 text-[var(--ordex-accent)]" />
@@ -154,7 +154,7 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
                   "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
                   roomType === "cinema"
                     ? "border-[var(--ordex-accent)] bg-[var(--ordex-accent-soft)]"
-                    : "border-white/10 bg-black/20 hover:bg-white/5",
+                    : "ordex-inset border-white/10 hover:bg-[var(--ordex-panel-3)]",
                 )}
               >
                 <Clapperboard className="size-4 text-[var(--ordex-accent)]" />
@@ -170,7 +170,7 @@ export function CreateRoomModal({ open, onOpenChange }: CreateRoomModalProps) {
                   "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
                   roomType === "gaming"
                     ? "border-[var(--ordex-accent)] bg-[var(--ordex-accent-soft)]"
-                    : "border-white/10 bg-black/20 hover:bg-white/5",
+                    : "ordex-inset border-white/10 hover:bg-[var(--ordex-panel-3)]",
                 )}
               >
                 <Gamepad2 className="size-4 text-[var(--ordex-accent)]" />

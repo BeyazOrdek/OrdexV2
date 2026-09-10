@@ -262,7 +262,7 @@ export function MediaPanel({
                 onChange={(e) => setLink(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder="YouTube veya mp4/tau-video linki gir..."
-                className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-[var(--ordex-accent)]/40"
+                className="ordex-inset h-9 border-white/10 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-[var(--ordex-accent)]/40"
               />
             </div>
             <Button
@@ -280,7 +280,7 @@ export function MediaPanel({
             <Button
               size="sm"
               variant="outline"
-              className="h-9 shrink-0 border-white/10 bg-black/20 px-2 text-xs hover:bg-white/5"
+              className="h-9 shrink-0 border-white/10 bg-[var(--ordex-panel-2)] px-2 text-xs hover:bg-[var(--ordex-panel-3)]"
               title="Davet linkini kopyala"
               onClick={copyInvite}
             >

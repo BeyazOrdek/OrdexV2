@@ -129,13 +129,13 @@ export default function Dashboard() {
               onKeyDown={(e) => e.key === "Enter" && goJoin()}
               placeholder="6 haneli oda kodu"
               maxLength={6}
-              className="mt-3 h-10 border-white/10 bg-black/30 font-mono text-sm uppercase tracking-[0.3em] placeholder:font-sans placeholder:tracking-normal placeholder:text-zinc-600 focus-visible:ring-[var(--ordex-accent)]/40"
+              className="ordex-inset mt-3 h-10 border-white/10 font-mono text-sm uppercase tracking-[0.3em] placeholder:font-sans placeholder:tracking-normal placeholder:text-zinc-500 focus-visible:ring-[var(--ordex-accent)]/40"
             />
             <Button
               onClick={goJoin}
               disabled={code.trim().length !== 6}
               variant="outline"
-              className="mt-3 h-10 w-full gap-2 border-white/10 bg-black/20 text-sm hover:bg-white/5"
+              className="ordex-inset mt-3 h-10 w-full gap-2 border-white/10 text-sm hover:bg-[var(--ordex-panel-3)]"
             >
               Odaya gir <ArrowRight className="size-4" />
             </Button>
@@ -170,7 +170,7 @@ export default function Dashboard() {
                         </span>
                       </div>
                       <div className="mt-3 flex items-center justify-between">
-                        <span className="rounded bg-black/40 px-2 py-0.5 font-mono text-[11px] tracking-widest text-zinc-400">
+                        <span className="ordex-chip rounded px-2 py-0.5 font-mono text-[11px] tracking-widest">
                           {room.code}
                         </span>
                         <span className="text-xs text-zinc-500 transition-colors group-hover:text-[var(--ordex-accent)]">
@@ -208,7 +208,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
-                    <span className="rounded bg-black/40 px-2 py-0.5 font-mono text-[11px] tracking-widest text-zinc-400">
+                    <span className="ordex-chip rounded px-2 py-0.5 font-mono text-[11px] tracking-widest">
                       {room.code}
                     </span>
                     <span className="text-xs text-zinc-500 transition-colors group-hover:text-[var(--ordex-accent)]">

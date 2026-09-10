@@ -212,7 +212,7 @@ export function GamingStage({
               >
                 {micOn ? <Mic className="size-4" /> : <MicOff className="size-4" />}
               </Button>
-              <Button onClick={onLeaveVoice} variant="outline" className="h-9 shrink-0 border-white/10 bg-black/20 text-xs hover:bg-white/5">
+              <Button onClick={onLeaveVoice} variant="outline" className="ordex-inset h-9 shrink-0 border-white/10 text-xs hover:bg-[var(--ordex-panel-3)]">
                 Sesli kanaldan ayrıl
               </Button>
             </>
@@ -232,7 +232,7 @@ export function GamingStage({
             <Button
               onClick={onJoinVoice}
               variant="outline"
-              className="h-9 shrink-0 gap-2 border-white/10 bg-black/20 text-xs hover:bg-white/5"
+              className="ordex-inset h-9 shrink-0 gap-2 border-white/10 text-xs hover:bg-[var(--ordex-panel-3)]"
             >
               <Headphones className="size-4" /> Sesli kanala katıl
             </Button>
@@ -252,7 +252,7 @@ export function GamingStage({
             {participants.map((p) => (
               <span
                 key={p.sessionId}
-                className="flex items-center gap-1 rounded-full bg-black/30 px-2 py-0.5 text-[10px] text-zinc-300"
+                className="ordex-chip flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] text-zinc-300"
               >
                 {p.micOn ? <Mic className="size-2.5 text-emerald-400" /> : <MicOff className="size-2.5 text-red-400" />}
                 {p.isSharing ? <MonitorUp className="size-2.5 text-[var(--ordex-accent)]" /> : null}

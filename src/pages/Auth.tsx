@@ -179,7 +179,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               <form onSubmit={handlePasswordSubmit}>
                 <CardContent>
                   {/* Sign in / Sign up tabs */}
-                  <div className="mb-4 grid grid-cols-2 gap-1 rounded-lg bg-black/30 p-1">
+                  <div className="ordex-inset mb-4 grid grid-cols-2 gap-1 rounded-lg p-1">
                     {(["signin", "signup"] as const).map((m) => (
                       <button
                         key={m}

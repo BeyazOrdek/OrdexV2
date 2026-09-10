@@ -241,7 +241,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
                       <button
                         key={emoji}
                         onClick={() => void toggleReaction({ messageId: m._id as never, emoji })}
-                        className="rounded-full border border-white/10 bg-black/30 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:border-white/25"
+                        className="ordex-chip rounded-full border border-white/10 px-1.5 py-0.5 text-[10px] hover:border-white/25"
                       >
                         {emoji} {count}
                       </button>
@@ -250,7 +250,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
                 )}
               </div>
               {/* Hover reaction bar */}
-              <div className="absolute -top-2 right-1 hidden gap-0.5 rounded-full border border-white/10 bg-[#1a1d21] px-1 py-0.5 shadow group-hover:flex">
+              <div className="absolute -top-2 right-1 hidden gap-0.5 rounded-full border border-white/10 bg-[var(--ordex-panel-2)] px-1 py-0.5 shadow group-hover:flex">
                 {QUICK_EMOJIS.slice(0, 5).map((emoji) => (
                   <button
                     key={emoji}
@@ -269,7 +269,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
 
       {/* GIF picker */}
       {showGifs && (
-        <div className="border-t border-white/5 bg-black/30 p-2">
+        <div className="border-t border-white/5 ordex-inset p-2">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-2.5 size-3.5 text-zinc-600" />
@@ -278,7 +278,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
                 onChange={(e) => setGifQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && void loadGifs(gifQuery)}
                 placeholder="GIF ara..."
-                className="h-8 border-white/10 bg-black/40 pl-8 text-xs placeholder:text-zinc-600"
+                className="h-8 border-white/10 bg-[var(--ordex-panel-2)] pl-8 text-xs placeholder:text-zinc-600"
               />
             </div>
             <Button
@@ -338,7 +338,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
           placeholder="Mesaj yaz..."
           maxLength={2000}
-          className="h-9 border-white/10 bg-black/30 text-xs placeholder:text-zinc-600 focus-visible:ring-red-500/40"
+          className="ordex-inset h-9 border-white/10 text-xs placeholder:text-zinc-600 focus-visible:ring-red-500/40"
         />
         <Button
           size="icon"

@@ -194,7 +194,7 @@ function DmView({
             <div
               className={cn(
                 "max-w-[85%] rounded-xl px-2.5 py-1.5",
-                m.mine ? "bg-[var(--ordex-accent-soft)] text-[var(--ordex-text)]" : "bg-black/30 text-zinc-300",
+                m.mine ? "bg-[var(--ordex-accent-soft)] text-[var(--ordex-text)]" : "ordex-inset text-zinc-300",
               )}
             >
               {m.text && <MentionText text={m.text} selfName={user?.name ?? undefined} />}
@@ -210,12 +210,12 @@ function DmView({
       </div>
 
       {showGifs && (
-        <div className="border-t border-white/5 bg-black/30 p-2">
+        <div className="ordex-inset border-t border-white/5 p-2">
           <div className="flex items-center gap-2">
             <Input
               placeholder="GIF ara..."
               onKeyDown={(e) => e.key === "Enter" && void loadGifs((e.target as HTMLInputElement).value)}
-              className="h-8 border-white/10 bg-black/40 text-xs"
+              className="h-8 border-white/10 bg-[var(--ordex-panel-2)] text-xs"
             />
             <Button size="sm" variant="secondary" className="h-8 px-2 text-xs" onClick={() => void loadGifs("")}>
               Ara
@@ -264,7 +264,7 @@ function DmView({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
           placeholder={`${peer.name} kullanıcısına mesaj... (@bahset)`}
-          className="h-9 border-white/10 bg-black/30 text-xs"
+          className="ordex-inset h-9 border-white/10 text-xs"
         />
         <Button
           size="icon"
@@ -349,7 +349,7 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
               value={nameDraft}
               onChange={(e) => setNameDraft(e.target.value)}
               autoFocus
-              className="h-7 border-white/10 bg-black/40 text-xs"
+              className="h-7 border-white/10 bg-[var(--ordex-panel-2)] text-xs"
             />
             <Button size="icon" variant="ghost" className="size-7 text-emerald-400" type="submit">
               <Check className="size-3.5" />
@@ -399,7 +399,7 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
             <div
               className={cn(
                 "max-w-[85%] rounded-xl px-2.5 py-1.5",
-                m.mine ? "bg-[var(--ordex-accent-soft)] text-[var(--ordex-text)]" : "bg-black/30 text-zinc-300",
+                m.mine ? "bg-[var(--ordex-accent-soft)] text-[var(--ordex-text)]" : "ordex-inset text-zinc-300",
               )}
             >
               {m.text && <MentionText text={m.text} selfName={user?.name ?? undefined} />}
@@ -420,7 +420,7 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
           placeholder={`${group.name} grubuna mesaj... (@bahset)`}
-          className="h-9 border-white/10 bg-black/30 text-xs"
+          className="ordex-inset h-9 border-white/10 text-xs"
         />
         <Button
           size="icon"
@@ -482,7 +482,7 @@ function CreateGroupModal({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Grup adı..."
-          className="h-9 border-white/10 bg-black/30 text-xs"
+          className="ordex-inset h-9 border-white/10 text-xs"
         />
         <div className="max-h-56 space-y-1 overflow-y-auto [scrollbar-width:thin]">
           {friends.length === 0 && <p className="px-1 py-2 text-xs text-zinc-600">Gruba eklemek için önce arkadaş ekle.</p>}

@@ -96,7 +96,8 @@ export function RightPanel({
               value={link}
               onChange={(e) => setLink(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submitLink()}
-              placeholder="YouTube veya mp4 linki yapıştır..."                className="h-9 border-white/10 bg-black/30 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-[var(--ordex-accent)]/40"
+              placeholder="YouTube veya mp4 linki yapıştır..."
+              className="ordex-inset h-9 border-white/10 pl-8 text-xs placeholder:text-zinc-600 focus-visible:ring-[var(--ordex-accent)]/40"
             />
           </div>
           <Button
@@ -111,14 +112,14 @@ export function RightPanel({
 
         <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto [scrollbar-width:thin]">
           {pending.length === 0 && (
-            <p className="rounded-md bg-black/20 px-2 py-2 text-[11px] text-zinc-600">
+            <p className="ordex-inset rounded-md px-2 py-2 text-[11px] text-zinc-500">
               Sıra boş. Bir link ekleyerek başlat.
             </p>
           )}
           {pending.map((item, i) => (
             <div
               key={item._id}
-              className="group flex items-center gap-2 rounded-md bg-black/20 px-2 py-1.5"
+              className="ordex-inset group flex items-center gap-2 rounded-md px-2 py-1.5"
             >
               <span className="w-4 shrink-0 text-center font-mono text-[10px] text-zinc-600">
                 {i + 1}
@@ -174,7 +175,7 @@ export function RightPanel({
 
         <div className="space-y-1">
           {voiceParticipants.length === 0 && (
-            <p className="rounded-md bg-black/20 px-2 py-2 text-[11px] text-zinc-600">
+            <p className="ordex-inset rounded-md px-2 py-2 text-[11px] text-zinc-500">
               Sesli kanalda kimse yok. Mikrofonu açarak katıl.
             </p>
           )}
@@ -265,7 +266,7 @@ function VoiceFooter({
 
   if (call.active) {
     return (
-      <div className="border-t border-white/5 bg-black/30 p-3">
+      <div className="border-t border-white/5 bg-[var(--ordex-panel-2)] p-3">
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2">
           <span
             className={cn(
@@ -297,7 +298,7 @@ function VoiceFooter({
   }
 
   return (
-    <div className="border-t border-white/5 bg-black/30 p-3">
+    <div className="border-t border-white/5 bg-[var(--ordex-panel-2)] p-3">
       {inVoice ? (
         <div className="flex items-center gap-2">
           <Button

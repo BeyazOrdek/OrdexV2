@@ -185,7 +185,7 @@ export function SettingsModal({ open, onOpenChange, initialSection = "profile" }
                       "flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
                       theme === t.id
                         ? "border-[var(--ordex-accent)] bg-[var(--ordex-accent-soft)]"
-                        : "border-white/10 bg-black/20 hover:bg-white/5",
+                        : "ordex-inset border-white/10 hover:bg-[var(--ordex-panel-3)]",
                     )}
                   >
                     <span className="flex shrink-0 -space-x-1.5">
@@ -234,7 +234,7 @@ export function SettingsModal({ open, onOpenChange, initialSection = "profile" }
                   mono
                 />
               </div>
-              <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-3 text-[11px] leading-relaxed text-zinc-500">
+              <div className="mt-4 rounded-lg border border-white/10 ordex-inset p-3 text-[11px] leading-relaxed text-zinc-500">
                 <p className="mb-1 flex items-center gap-1.5 font-semibold text-zinc-300">
                   <BadgeCheck className="size-3.5 text-[var(--ordex-accent)]" /> Oturum güvenliği
                 </p>
@@ -252,7 +252,7 @@ export function SettingsModal({ open, onOpenChange, initialSection = "profile" }
 
 function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+    <div className="ordex-inset flex items-center justify-between gap-4 rounded-lg border border-white/10 px-3 py-2">
       <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">{label}</span>
       <span
         className={cn(
@@ -395,14 +395,14 @@ function ProfileForm({ user }: { user: ProfileUser }) {
           onChange={(e) => setName(e.target.value)}
           placeholder="Kullanıcı adı"
           maxLength={32}
-          className="h-9 border-white/10 bg-black/30 text-sm"
+          className="h-9 ordex-inset border-white/10 text-sm"
         />
         <Input
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           placeholder="Durum mesajı"
           maxLength={120}
-          className="h-9 border-white/10 bg-black/30 text-sm"
+          className="h-9 ordex-inset border-white/10 text-sm"
         />
         {/* Status presets */}
         <div className="flex flex-wrap gap-1.5">
@@ -415,7 +415,7 @@ function ProfileForm({ user }: { user: ProfileUser }) {
                 "rounded-full border px-2 py-0.5 text-[10px] transition-colors",
                 status === preset
                   ? "border-[var(--ordex-accent)] bg-[var(--ordex-accent-soft)] text-white"
-                  : "border-white/10 bg-black/20 text-zinc-400 hover:bg-white/5",
+                  : "ordex-inset border-white/10 text-zinc-400 hover:bg-[var(--ordex-panel-3)]",
               )}
             >
               {preset}
@@ -431,7 +431,7 @@ function ProfileForm({ user }: { user: ProfileUser }) {
             value={avatar}
             onChange={(e) => setAvatar(e.target.value)}
             placeholder="Avatar linki (gif/png/jpg)"
-            className="h-9 min-w-0 flex-1 border-white/10 bg-black/30 text-xs"
+            className="h-9 min-w-0 flex-1 ordex-inset border-white/10 text-xs"
           />
           <Button
             size="sm"
@@ -466,14 +466,14 @@ function ProfileForm({ user }: { user: ProfileUser }) {
           }}
         />
         {showAvatarGifs && (
-          <div className="rounded-lg border border-white/10 bg-black/30 p-2">
+          <div className="rounded-lg border border-white/10 ordex-inset p-2">
             <div className="flex gap-2">
               <Input
                 value={gifQuery}
                 onChange={(e) => setGifQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && void loadGifs(gifQuery)}
                 placeholder="GIF ara..."
-                className="h-8 flex-1 border-white/10 bg-black/40 text-xs"
+                className="h-8 flex-1 border-white/10 bg-[var(--ordex-panel-2)] text-xs"
               />
               <Button
                 size="sm"
@@ -566,7 +566,7 @@ function ProfileForm({ user }: { user: ProfileUser }) {
             if (e.target.value) setBannerColor("");
           }}
           placeholder={bannerUrl.startsWith("data:") ? "Yerel dosya yüklendi ✓" : "Banner görsel linki (https://...)"}
-          className="h-9 border-white/10 bg-black/30 text-xs"
+          className="h-9 ordex-inset border-white/10 text-xs"
         />
       </div>
 
