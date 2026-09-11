@@ -679,6 +679,68 @@ function useActiveRoom(): Id<"rooms"> | undefined {
   return id;
 }
 
+// ---------- Full-screen social view (home page, outside any room) ----------
+
+// Fan-out listeners: both the Dashboard mirror and the HomeSocialStage
+// subscribe, so every subscriber always holds a consistent view state
+// (a single-slot handle went stale when the stage unmounted).
+const homeSocialListeners = new Set<(view: SocialView) => void>();
+
+/** The home page reports its current full-screen social view here. */
+export function setHomeSocialView(view: SocialView) {
+  for (const l of homeSocialListeners) l(view);
+}
+
+/** React hook mirror of the home page's full-screen social view. */
+export function useHomeSocialView(): SocialView {
+  const [view, setView] = useState<SocialView>(null);
+  useEffect(() => {
+    homeSocialListeners.add(setView);
+    return () => {
+      homeSocialListeners.delete(setView);
+    };
+  }, []);
+  return view;
+}
+
+// Latest useCall actions from the single SocialOverlay instance.
+let startCallExternal: ((peerId: string, peerName: string) => void) | null = null;
+
+/**
+ * Starts a 1:1 voice call from anywhere (home page, panels). Delegates to the
+ * single SocialOverlay's useCall instance so call state stays in one place —
+ * mounting a second useCall would fork the WebRTC state.
+ */
+export function startCallWith(peerId: string, peerName: string) {
+  startCallExternal?.(peerId, peerName);
+}
+
+/**
+ * Full-screen DM / group chat surface used on the home page (outside rooms).
+ * Same message components as the room slide-over, so read ticks, GIFs, call
+ * button and mention highlighting behave identically in both modes.
+ * The view is passed as a prop (from the page's own useHomeSocialView mirror)
+ * rather than subscribed here — the dispatch happens before this component
+ * mounts, so a self-subscription would miss the very first open.
+ */
+export function HomeSocialStage({ view }: { view: SocialView }) {
+  const startCallTo = useCallback(
+    (peer: PublicUserLite) => startCallWith(peer._id, peer.name),
+    [],
+  );
+
+  if (!view) return null;
+  return (
+    <div className="ordex-panel flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {view.kind === "dm" ? (
+        <DmView peer={view.peer} onBack={() => setHomeSocialView(null)} onCall={startCallTo} />
+      ) : (
+        <GroupChatView groupId={view.groupId} onBack={() => setHomeSocialView(null)} />
+      )}
+    </div>
+  );
+}
+
 // ---------- Notification watcher + tab title ----------
 
 function SocialWatcher() {
@@ -725,8 +787,17 @@ export type SocialView =
 
 /** Imperative handle so panels can open a DM/group window from anywhere. */
 let openSocialViewExternal: ((view: SocialView) => void) | null = null;
+/**
+ * Opens a DM/group view. Inside a room it renders as the slide-over window;
+ * on the home page (no active room) it takes over the full-screen chat stage,
+ * so DMs never require joining a room.
+ */
 export function openSocialView(view: SocialView) {
-  openSocialViewExternal?.(view);
+  if (activeRoom === undefined) {
+    for (const l of homeSocialListeners) l(view);
+  } else {
+    openSocialViewExternal?.(view);
+  }
 }
 
 /** Imperative handle for the create-group modal. */
@@ -738,8 +809,16 @@ export function openCreateGroupModal() {
 export function SocialOverlay() {
   useSoundBus();
   const call = useCall();
+  const currentRoom = useActiveRoom();
+  const inRoom = currentRoom !== undefined;
   const [view, setView] = useState<SocialView>(null);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+
+  // Leaving a room drops any open slide-over chat; the home page owns the
+  // full-screen stage instead, so the old window can never linger over it.
+  useEffect(() => {
+    if (!inRoom) setView(null);
+  }, [inRoom]);
 
   useEffect(() => {
     openSocialViewExternal = setView;
@@ -776,6 +855,16 @@ export function SocialOverlay() {
     void call.start(peer._id as Id<"users">, peer.name);
   };
 
+  // Single start-call handle for the whole app (home page panels call this).
+  useEffect(() => {
+    startCallExternal = (peerId, peerName) => {
+      void call.start(peerId as Id<"users">, peerName);
+    };
+    return () => {
+      startCallExternal = null;
+    };
+  }, [call.start]);
+
   useEffect(() => {
     openCreateGroupExternal = () => setCreateGroupOpen(true);
     return () => {
@@ -788,8 +877,10 @@ export function SocialOverlay() {
       <SocialWatcher />
       <CallUi call={call} />
 
-      {/* DM / Group window (slide-over above everything) */}
-      {view && (
+      {/* DM / Group window — slide-over inside rooms; on the home page the
+          same views render full-screen via <HomeSocialStage view={...} />
+          (Dashboard), so DMs never require joining a room. */}
+      {view && inRoom && (
         <div className="ordex-panel fixed inset-y-0 right-0 z-[9985] flex w-full max-w-sm flex-col border-l border-white/10 shadow-2xl shadow-black/60 md:inset-y-0">
           {view.kind === "dm" ? (
             <DmView peer={view.peer} onBack={() => setView(null)} onCall={startCallTo} />
@@ -799,10 +890,22 @@ export function SocialOverlay() {
         </div>
       )}
 
-      <CreateGroupModal open={createGroupOpen} onOpenChange={setCreateGroupOpen} onCreated={(groupId) => setView({ kind: "group", groupId })} />
+      <CreateGroupModal
+        open={createGroupOpen}
+        onOpenChange={setCreateGroupOpen}
+        onCreated={(groupId) =>
+          // Same routing as openSocialView: full-screen stage on the home
+          // page, slide-over inside a room — a freshly created group chat is
+          // shown immediately in whichever surface is active.
+          currentRoom === undefined
+            ? setHomeSocialView({ kind: "group", groupId })
+            : setView({ kind: "group", groupId })
+        }
+      />
 
-      {/* Floating quick actions (bottom-right, above mobile nav) */}
-      {!view && (
+      {/* Floating quick actions (bottom-right, above mobile nav) — rooms only;
+          the home page exposes the same actions inside its panels. */}
+      {!view && inRoom && (
         <div className="fixed bottom-20 right-3 z-[9980] flex flex-col gap-2 md:bottom-4">
           <Button
             size="icon"

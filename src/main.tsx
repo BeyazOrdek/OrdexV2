@@ -150,10 +150,12 @@ createRoot(document.getElementById("root")!).render(
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
-        </BrowserRouter>
-        {/* Global social layer: calls, DM/group windows, badges, sounds. */}
+        {/* Global social layer: calls, DM/group windows, badges, sounds.
+            Lives INSIDE the router so its windows can navigate and render
+            full-screen on home (no room join required for DMs). */}
         <SocialOverlay />
         <Toaster />
+      </BrowserRouter>
       </ConvexAuthProvider>
     </RootErrorBoundary>
   </StrictMode>,

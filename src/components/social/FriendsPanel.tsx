@@ -23,6 +23,7 @@ import {
   CountBadge,
   openCreateGroupModal,
   openSocialView,
+  startCallWith,
   useUnreadBadges,
 } from "@/components/social/SocialOverlay";
 
@@ -157,6 +158,8 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
     }
   };
 
+  // openSocialView routes automatically: slide-over in rooms, full-screen
+  // chat stage on the home page. The phone button always voice-calls.
   const openDm = (u: PublicUserLite) => openSocialView({ kind: "dm", peer: u });
 
   const onlineFriends = useMemo(() => friends.filter((f) => isOnline(f._id)), [friends, onlineMap]);
@@ -415,7 +418,7 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
                   variant="ghost"
                   className="size-6 text-[var(--ordex-muted)] hover:bg-white/10 hover:text-emerald-400"
                   title="Sesli ara"
-                  onClick={() => openSocialView({ kind: "dm", peer: u })}
+                  onClick={() => startCallWith(u._id, u.name)}
                 >
                   <Phone className="size-3.5" />
                 </Button>
