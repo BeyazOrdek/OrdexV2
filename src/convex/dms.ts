@@ -37,6 +37,85 @@ async function publicUser(ctx: QueryCtx, userId: Id<"users">) {
   };
 }
 
+// ================= Typing indicators =================
+
+const TYPING_TTL_MS = 6_000;
+
+/** Broadcast "I'm typing" in a DM/group/room. Ephemeral: rows expire silently. */
+export const setTyping = mutation({
+  args: {
+    scope: v.union(v.literal("dm"), v.literal("group"), v.literal("room")),
+    targetId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const user = await ctx.db.get(me);
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("typing")
+      .withIndex("by_scope_target", (q) => q.eq("scope", args.scope).eq("targetId", args.targetId))
+      .collect()
+      .then((rows) => rows.find((r) => r.userId === me));
+    if (existing) {
+      await ctx.db.patch(existing._id, { updatedAt: now });
+    } else {
+      await ctx.db.insert("typing", {
+        scope: args.scope,
+        targetId: args.targetId,
+        userId: me,
+        userName: user?.name ?? "Misafir",
+        updatedAt: now,
+      });
+    }
+    // Opportunistic TTL sweep: a typist who closed the tab never stops typing.
+    const stale = await ctx.db
+      .query("typing")
+      .withIndex("by_scope_target", (q) => q.eq("scope", args.scope).eq("targetId", args.targetId))
+      .collect();
+    for (const row of stale) {
+      if (now - row.updatedAt > TYPING_TTL_MS) await ctx.db.delete(row._id);
+    }
+  },
+});
+
+/** Stop the typing indicator (Enter gönderildi / input temizlendi). */
+export const clearTyping = mutation({
+  args: {
+    scope: v.union(v.literal("dm"), v.literal("group"), v.literal("room")),
+    targetId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const rows = await ctx.db
+      .query("typing")
+      .withIndex("by_scope_target", (q) => q.eq("scope", args.scope).eq("targetId", args.targetId))
+      .collect();
+    for (const row of rows) {
+      if (row.userId === me) await ctx.db.delete(row._id);
+    }
+  },
+});
+
+/** Live typing list for a conversation (already TTL-filtered). */
+export const listTyping = query({
+  args: {
+    scope: v.union(v.literal("dm"), v.literal("group"), v.literal("room")),
+    targetId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
+    const now = Date.now();
+    const rows = await ctx.db
+      .query("typing")
+      .withIndex("by_scope_target", (q) => q.eq("scope", args.scope).eq("targetId", args.targetId))
+      .collect();
+    return rows
+      .filter((r) => r.userId !== me && now - r.updatedAt < TYPING_TTL_MS)
+      .map((r) => ({ userId: r.userId, userName: r.userName }));
+  },
+});
+
 /** Resolve @names in a text to user ids (for mention notifications). */
 async function resolveMentions(ctx: QueryCtx, text: string): Promise<Id<"users">[] | undefined> {
   const names = new Set<string>();
@@ -70,7 +149,7 @@ export const listDms = query({
       .query("dms")
       .withIndex("by_pair", (q) => q.eq("senderId", args.otherUserId).eq("recipientId", me))
       .collect();
-    return [...sent, ...received]
+    const rows = [...sent, ...received]
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((d) => ({
         ...d,
@@ -78,6 +157,54 @@ export const listDms = query({
         // ✔ sent (exists) / ✔✔ read (recipient opened after it was created)
         read: d.senderId === me ? d.readAt !== undefined : undefined,
       }));
+    // Attach reply previews (single fan-out, bounded to visible history).
+    const replyIds = new Set(rows.map((r) => r.replyToId).filter((id): id is Id<"dms"> => Boolean(id)));
+    const replyMap = new Map<string, { userName: string; text?: string }>();
+    for (const id of replyIds) {
+      const src = await ctx.db.get(id);
+      if (src) replyMap.set(id, { userName: src.senderName ?? "Bilinmeyen", text: src.text });
+    }
+    return rows.map((r) => ({
+      ...r,
+      replyTo: r.replyToId ? replyMap.get(r.replyToId) : undefined,
+    }));
+  },
+});
+
+/** Edit one of my own DMs ("düzenlendi" tag). */
+export const editDm = mutation({
+  args: { messageId: v.id("dms"), text: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.senderId !== me) throw new Error("Sadece kendi mesajını düzenleyebilirsin.");
+    const text = args.text.trim().slice(0, 2000);
+    if (!text && !msg.gifUrl) throw new Error("Mesaj boş olamaz.");
+    await ctx.db.patch(args.messageId, {
+      text: text || undefined,
+      editedAt: Date.now(),
+    });
+  },
+});
+
+/** Delete one of my own DMs. */
+export const deleteDm = mutation({
+  args: { messageId: v.id("dms") },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.senderId !== me) throw new Error("Sadece kendi mesajını silebilirsin.");
+    // Cut dangling replies so previews never 404 the UI.
+    const children = await ctx.db
+      .query("dms")
+      .withIndex("by_pair", (q) => q.eq("senderId", msg.senderId).eq("recipientId", msg.recipientId))
+      .collect();
+    for (const child of children) {
+      if (child.replyToId === args.messageId) {
+        await ctx.db.patch(child._id, { replyToId: undefined });
+      }
+    }
+    await ctx.db.delete(args.messageId);
   },
 });
 
@@ -539,6 +666,79 @@ export const getGroup = query({
   },
 });
 
+
+/** Send a group message (text/GIF/reply) with @mention resolution. */
+export const sendGroupMessage = mutation({
+  args: {
+    groupId: v.id("groups"),
+    text: v.optional(v.string()),
+    gifUrl: v.optional(v.string()),
+    gifThumb: v.optional(v.string()),
+    replyToId: v.optional(v.id("groupMessages")),
+  },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    if (!(await isMember(ctx, args.groupId, me))) throw new Error("Grup üyesi değilsin.");
+    const user = await ctx.db.get(me);
+    const text = args.text?.trim().slice(0, 2000);
+    if (!text && !args.gifUrl) throw new Error("Mesaj boş.");
+    let replyToId: Id<"groupMessages"> | undefined;
+    if (args.replyToId) {
+      const src = await ctx.db.get(args.replyToId);
+      if (src && src.groupId === args.groupId) replyToId = args.replyToId;
+    }
+    await ctx.db.insert("groupMessages", {
+      groupId: args.groupId,
+      senderId: me,
+      userName: user?.name ?? "Misafir",
+      text: text || undefined,
+      gifUrl: args.gifUrl,
+      gifThumb: args.gifThumb,
+      replyToId,
+      mentionedUserIds: text ? await resolveMentions(ctx, text) : undefined,
+      readBy: [me],
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/** Edit one of my own group messages ("düzenlendi" tag). */
+export const editGroupMessage = mutation({
+  args: { messageId: v.id("groupMessages"), text: v.string() },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.senderId !== me) throw new Error("Sadece kendi mesajını düzenleyebilirsin.");
+    const text = args.text.trim().slice(0, 2000);
+    if (!text && !msg.gifUrl) throw new Error("Mesaj boş olamaz.");
+    await ctx.db.patch(args.messageId, {
+      text: text || undefined,
+      editedAt: Date.now(),
+      mentionedUserIds: text ? await resolveMentions(ctx, text) : undefined,
+    });
+  },
+});
+
+/** Delete one of my own group messages. */
+export const deleteGroupMessage = mutation({
+  args: { messageId: v.id("groupMessages") },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || msg.senderId !== me) throw new Error("Sadece kendi mesajını silebilirsin.");
+    const children = await ctx.db
+      .query("groupMessages")
+      .withIndex("by_group", (q) => q.eq("groupId", msg.groupId))
+      .collect();
+    for (const child of children) {
+      if (child.replyToId === args.messageId) {
+        await ctx.db.patch(child._id, { replyToId: undefined });
+      }
+    }
+    await ctx.db.delete(args.messageId);
+  },
+});
+
 /** Group message history with per-message read receipts (relative to me). */
 export const listGroupMessages = query({
   args: { groupId: v.id("groups") },
@@ -551,41 +751,24 @@ export const listGroupMessages = query({
       .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
       .order("desc")
       .take(100);
-    return rows.reverse().map((m) => ({
+    const ordered = rows.reverse();
+    // Reply previews in one bounded fan-out.
+    const replyIds = new Set(
+      ordered.map((r) => r.replyToId).filter((id): id is Id<"groupMessages"> => Boolean(id)),
+    );
+    const replyMap = new Map<string, { userName: string; text?: string }>();
+    for (const id of replyIds) {
+      const src = await ctx.db.get(id);
+      if (src) replyMap.set(id, { userName: src.userName, text: src.text });
+    }
+    return ordered.map((m) => ({
       ...m,
       mine: m.senderId === me,
       // ✔✔ for my messages once another member has read them.
       readByAll:
         m.senderId === me ? m.readBy.some((id) => id !== me) : undefined,
+      replyTo: m.replyToId ? replyMap.get(m.replyToId) : undefined,
     }));
-  },
-});
-
-/** Send a group message (text/GIF) with @mention resolution. */
-export const sendGroupMessage = mutation({
-  args: {
-    groupId: v.id("groups"),
-    text: v.optional(v.string()),
-    gifUrl: v.optional(v.string()),
-    gifThumb: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const me = await requireUser(ctx);
-    if (!(await isMember(ctx, args.groupId, me))) throw new Error("Grup üyesi değilsin.");
-    const user = await ctx.db.get(me);
-    const text = args.text?.trim().slice(0, 2000);
-    if (!text && !args.gifUrl) throw new Error("Mesaj boş.");
-    await ctx.db.insert("groupMessages", {
-      groupId: args.groupId,
-      senderId: me,
-      userName: user?.name ?? "Misafir",
-      text: text || undefined,
-      gifUrl: args.gifUrl,
-      gifThumb: args.gifThumb,
-      mentionedUserIds: text ? await resolveMentions(ctx, text) : undefined,
-      readBy: [me],
-      createdAt: Date.now(),
-    });
   },
 });
 

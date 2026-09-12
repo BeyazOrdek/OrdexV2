@@ -14,7 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { badgeMeta } from "@/lib/profile";
-import { MentionText, openSocialView } from "@/components/social/SocialOverlay";
+import { UserProfileCard, MentionText, openSocialView } from "@/components/social/SocialOverlay";
 
 const QUICK_EMOJIS = ["👍", "😂", "❤️", "🔥", "😮", "😢", "🎉", "👀"];
 
@@ -145,12 +145,30 @@ export function ChatPanel({ roomId }: { roomId: string }) {
           const groups = reactionGroups.get(m._id);
           return (
             <div key={m._id} className="group relative mb-3 flex gap-2">
-              <span
-                className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                style={{ background: `hsl(${avatarHue(m.userId)} 65% 45%)` }}
-              >
-                {initials(m.userName)}
-              </span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" className="mt-0.5 shrink-0 outline-none" title="Profil">
+                    <span
+                      className="flex size-7 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                      style={{ background: `hsl(${avatarHue(m.userId)} 65% 45%)` }}
+                    >
+                      {initials(m.userName)}
+                    </span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="right" className="ordex-panel-2 w-72 border-white/10 p-0">
+                  <UserProfileCard
+                    user={{
+                      _id: String(m.userId),
+                      name: m.userName,
+                      avatarUrl: profile?.avatarUrl,
+                      statusMessage: profile?.statusMessage,
+                      nameColor: profile?.nameColor,
+                      badges: profile?.badges,
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                   {mine ? (

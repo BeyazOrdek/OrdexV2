@@ -11,7 +11,9 @@ import {
   BellRing,
   Check,
   CheckCheck,
+  CornerUpLeft,
   Hash,
+  Headphones,
   Image as ImageIcon,
   Loader2,
   Mic,
@@ -20,10 +22,16 @@ import {
   Phone,
   PhoneOff,
   Plus,
+  Reply,
   Search,
   Send,
+  Settings,
+  Smile,
+  Trash2,
   UserPlus,
   Users,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -31,6 +39,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { badgeMeta } from "@/lib/profile";
+import { readImageFile } from "@/lib/profile";
 
 // ---------- shared tiny bits ----------
 
@@ -56,6 +71,73 @@ function Avatar({ user, size = 8 }: { user: PublicUserLite; size?: number }) {
     >
       {initials(user.name)}
     </span>
+  );
+}
+
+/** Profile avatar that opens the Discord-style profile card on click. */
+export function ProfileAvatar({ user, size = 8 }: { user: PublicUserLite; size?: number }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className="shrink-0 outline-none" title={`${user.name} profili`}>
+          <Avatar user={user} size={size} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" className="ordex-panel-2 w-72 border-white/10 p-0">
+        <UserProfileCard user={user} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Discord-style mini profile card: banner, avatar, status, badges, DM CTA. */
+export function UserProfileCard({ user }: { user: PublicUserLite }) {
+  const { user: me } = useAuth();
+  const isMe = me?._id === user._id;
+  return (
+    <div className="overflow-hidden rounded-lg">
+      {/* Banner */}
+      <div
+        className="h-16 w-full"
+        style={{ background: "linear-gradient(135deg, var(--ordex-accent) 0%, var(--ordex-panel-3) 100%)" }}
+      />
+      <div className="relative px-3 pb-3">
+        <div className="-mt-7 mb-2 w-fit rounded-full border-4 border-[var(--ordex-panel-2)]">
+          <Avatar user={user} size={14} />
+        </div>
+        <p className="truncate text-sm font-bold text-zinc-100">{user.name}</p>
+        {user.statusMessage && (
+          <p className="mt-0.5 line-clamp-2 text-xs text-zinc-400">{user.statusMessage}</p>
+        )}
+        {(user.badges?.length ?? 0) > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(user.badges ?? []).map((b) => {
+              const meta = badgeMeta(b);
+              return meta ? (
+                <span
+                  key={b}
+                  className={cn("rounded-full border px-1.5 py-0.5 text-[10px] font-semibold", meta.className)}
+                  title={meta.label}
+                >
+                  {meta.icon} {meta.label}
+                </span>
+              ) : null;
+            })}
+          </div>
+        )}
+        {!isMe && (
+          <Button
+            size="sm"
+            className="mt-3 h-8 w-full gap-2 bg-[var(--ordex-accent)] text-xs text-white hover:bg-[var(--ordex-accent-hover)]"
+            onClick={() => {
+              openSocialView({ kind: "dm", peer: user });
+            }}
+          >
+            <Send className="size-3.5" /> DM Gönder
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -95,6 +177,251 @@ function ReadTicks({ read }: { read: boolean }) {
   );
 }
 
+// ---------- shared chat formatting helpers ----------
+
+/** "Bugün 20:34" / "Dün 09:12" / "12 Mar 14:05" Discord-style stamps. */
+function formatStamp(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ts >= dayStart) return `Bugün ${time}`;
+  if (ts >= dayStart - 86_400_000) return `Dün ${time}`;
+  return `${d.toLocaleDateString("tr-TR", { day: "numeric", month: "short" })} ${time}`;
+}
+
+function TypingRow({ names }: { names: string[] }) {
+  if (names.length === 0) return null;
+  const label =
+    names.length === 1
+      ? `${names[0]} yazıyor...`
+      : names.length === 2
+        ? `${names[0]} ve ${names[1]} yazıyor...`
+        : `${names[0]} ve ${names.length - 1} kişi yazıyor...`;
+  return (
+    <div className="flex items-center gap-2 px-3 pb-1">
+      <span className="flex items-center gap-0.5">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="ordex-typing-dot size-1.5 rounded-full bg-emerald-400" />
+        ))}
+      </span>
+      <span className="text-[10px] italic text-emerald-400/90">{label}</span>
+    </div>
+  );
+}
+
+/** Shared message action bar (reply / edit / delete) shown on hover. */
+function MessageActions({
+  mine,
+  onReply,
+  onEdit,
+  onDelete,
+}: {
+  mine: boolean;
+  onReply: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
+  return (
+    <div className="absolute -top-2 right-1 hidden items-center gap-0.5 rounded-full border border-white/10 bg-[var(--ordex-panel-3)] px-1 py-0.5 shadow-lg group-hover:flex">
+      <button
+        onClick={onReply}
+        className="rounded p-1 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+        title="Yanıtla"
+      >
+        <Reply className="size-3" />
+      </button>
+      {mine && onEdit && (
+        <button
+          onClick={onEdit}
+          className="rounded p-1 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          title="Düzenle"
+        >
+          <Pencil className="size-3" />
+        </button>
+      )}
+      {mine && onDelete && (
+        <button
+          onClick={onDelete}
+          className="rounded p-1 text-zinc-400 hover:bg-white/10 hover:text-red-400"
+          title="Sil"
+        >
+          <Trash2 className="size-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Thin quoted line shown above a reply. */
+function ReplyPreview({ userName, text }: { userName: string; text?: string }) {
+  return (
+    <div className="mb-1 flex items-start gap-1.5 border-l-2 border-[var(--ordex-accent)] pl-1.5 opacity-80">
+      <CornerUpLeft className="mt-0.5 size-2.5 shrink-0 text-[var(--ordex-accent)]" />
+      <p className="min-w-0 truncate text-[10px] text-zinc-400">
+        <span className="font-semibold text-zinc-300">{userName}</span>
+        {text ? ` ${text}` : " medya gönderdi"}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * File picker → data-url. Images are downscaled client-side (max 640px,
+ * jpeg 0.8) so previews stay inside the users document limit; non-images
+ * are rejected — v1 chat ships photo/media previews only.
+ */
+async function readChatImage(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error("Sadece görsel dosyalar gönderilebilir.");
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Dosya okunamadı."));
+    reader.readAsDataURL(file);
+  });
+  if (file.type === "image/gif") {
+    if (dataUrl.length > 280_000) throw new Error("GIF çok büyük — daha küçük bir dosya seç.");
+    return dataUrl;
+  }
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Görsel yüklenemedi."));
+    image.src = dataUrl;
+  });
+  const scale = Math.min(1, 640 / Math.max(img.width, img.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(img.height * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const out = canvas.toDataURL("image/jpeg", 0.8);
+  if (out.length > 280_000) throw new Error("Görsel çok büyük — daha küçük bir dosya seç.");
+  return out;
+}
+
+// ---------- Discord-style top call banner ----------
+
+/**
+ * Dark, sleek call panel rendered at the TOP of the DM chat area (Discord's
+ * call banner): both avatars side by side with the green speaking ring +
+ * curved sound-wave animation while ringing/talking, and mic / headphone /
+ * red hang-up controls in a row. Replaces the old bottom-left mini card.
+ */
+function CallBanner({
+  state,
+  peerName,
+  peerAvatar,
+  selfUser,
+  onHangUp,
+}: {
+  state: "ringing" | "active";
+  peerName: string;
+  peerAvatar?: string;
+  selfUser: { _id: string; name: string; avatarUrl?: string } | null;
+  onHangUp: () => void;
+}) {
+  const snap = useCallState();
+  const controls = getCallControls();
+  return (
+    <div className="ordex-panel-2 border-b border-white/10 px-4 py-4">
+      <div className="mx-auto flex w-full max-w-md flex-col items-center gap-3">
+        <div className="flex items-center gap-6">
+          {/* Self avatar */}
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="relative flex size-16 items-center justify-center rounded-full">
+              {selfUser?.avatarUrl ? (
+                <img src={selfUser.avatarUrl} alt="Sen" className="size-14 rounded-full border border-white/15 object-cover" />
+              ) : (
+                <span className="flex size-14 items-center justify-center rounded-full bg-[var(--ordex-panel-3)] text-sm font-bold text-[var(--ordex-accent)]">
+                  {initials(selfUser?.name ?? "Sen")}
+                </span>
+              )}
+              {!snap.micOn && (
+                <span className="absolute -bottom-1 -right-1 flex size-5 items-center justify-center rounded-full bg-red-600">
+                  <MicOff className="size-3 text-white" />
+                </span>
+              )}
+            </span>
+            <span className="max-w-20 truncate text-[10px] font-medium text-zinc-400">Sen</span>
+          </div>
+
+          {/* Sound wave between the avatars */}
+          <div className="flex h-10 items-end gap-1" aria-hidden>
+            {[0, 1, 2, 3, 4].map((i) => (
+              <span
+                key={i}
+                className="ordex-call-wave w-1 rounded-full bg-emerald-400/80"
+                style={{
+                  height: state === "active" ? `${8 + (i % 3) * 6}px` : "6px",
+                  animationDelay: `${i * 0.12}s`,
+                  animationDuration: state === "active" ? "1.1s" : "2s",
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Peer avatar */}
+          <div className="flex flex-col items-center gap-1.5">
+            <span
+              className={cn(
+                "relative flex size-16 items-center justify-center rounded-full",
+                "ordex-call-ring",
+              )}
+            >
+              {peerAvatar ? (
+                <img src={peerAvatar} alt={peerName} className="size-14 rounded-full border border-white/15 object-cover" />
+              ) : (
+                <span className="flex size-14 items-center justify-center rounded-full bg-[var(--ordex-accent-soft)] text-sm font-bold text-[var(--ordex-accent)]">
+                  {initials(peerName)}
+                </span>
+              )}
+            </span>
+            <span className="max-w-20 truncate text-[10px] font-medium text-zinc-400">{peerName}</span>
+          </div>
+        </div>
+
+        <p className="text-xs font-semibold text-zinc-200">
+          {state === "ringing" ? `${peerName} aranıyor... çalıyor` : "Görüşme sürüyor"}
+        </p>
+
+        {/* Mic / headphone / hang-up controls */}
+        <div className="mt-1 flex items-center gap-2">
+          <Button
+            size="icon"
+            variant={snap.micOn ? "secondary" : "destructive"}
+            className="size-10 rounded-full"
+            title={snap.micOn ? "Mikrofonu kapat" : "Mikrofonu aç"}
+            onClick={() => controls?.toggleMic()}
+            disabled={!controls}
+          >
+            {snap.micOn ? <Mic className="size-4" /> : <MicOff className="size-4" />}
+          </Button>
+          <Button
+            size="icon"
+            variant={snap.deafened ? "destructive" : "secondary"}
+            className="size-10 rounded-full"
+            title={snap.deafened ? "Kulaklığı aç" : "Kulaklığı kapat"}
+            onClick={() => controls?.toggleDeafen()}
+            disabled={!controls}
+          >
+            {snap.deafened ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+          </Button>
+          <Button
+            size="icon"
+            className="size-10 rounded-full bg-red-600 text-white hover:bg-red-500"
+            title="Aramayı sonlandır"
+            onClick={onHangUp}
+          >
+            <PhoneOff className="size-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- DM view ----------
 
 function DmView({
@@ -110,13 +437,40 @@ function DmView({
   const messages = useQuery(api.dms.listDms, { otherUserId: peer._id as never }) ?? [];
   const markRead = useMutation(api.dms.markDmsRead);
   const sendDm = useMutation(api.social.sendDm);
+  const editDm = useMutation(api.dms.editDm);
+  const deleteDm = useMutation(api.dms.deleteDm);
+  const setTyping = useMutation(api.dms.setTyping);
+  const clearTyping = useMutation(api.dms.clearTyping);
   const searchGifs = useActionSafe();
+  const callState = useCallState();
 
   const [text, setText] = useState("");
+  const [replyTo, setReplyTo] = useState<{ _id: string; userName: string; text?: string } | null>(null);
+  const [editing, setEditing] = useState<{ _id: string; text: string } | null>(null);
   const [showGifs, setShowGifs] = useState(false);
   const [gifs, setGifs] = useState<{ id: string; url: string; preview: string; desc: string }[]>([]);
   const [gifLoading, setGifLoading] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Live typing indicator (peer) + broadcast mine. TYPING_TTL on the server
+  // makes stale rows vanish even if a tab crashes mid-keystroke.
+  const typing = useQuery(api.dms.listTyping, { scope: "dm", targetId: peer._id });
+  const typingNames = (typing ?? []).map((t) => t.userName);
+  const lastTypingSentRef = useRef(0);
+  const handleType = () => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current > 3000) {
+      lastTypingSentRef.current = now;
+      void setTyping({ scope: "dm", targetId: peer._id }).catch(() => undefined);
+    }
+  };
+  const stopTyping = () => {
+    if (lastTypingSentRef.current !== 0) {
+      lastTypingSentRef.current = 0;
+      void clearTyping({ scope: "dm", targetId: peer._id }).catch(() => undefined);
+    }
+  };
 
   // Görüldü: mark the peer's messages read whenever the window is open and
   // new ones arrive; also pop the notification bip for fresh arrivals.
@@ -138,18 +492,46 @@ function DmView({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.length]);
+  }, [messages.length, typingNames.length]);
+
+  useEffect(() => stopTyping, [peer._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = (gif?: { url: string; preview: string }) => {
     const clean = text.trim();
     if (!clean && !gif) return;
     setText("");
+    setReplyTo(null);
+    stopTyping();
     void sendDm({
       recipientId: peer._id as never,
       text: clean || undefined,
       gifUrl: gif?.url,
       gifThumb: gif?.preview,
+      replyToId: replyTo ? (replyTo._id as never) : undefined,
     }).catch(() => undefined);
+  };
+
+  const sendImage = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const dataUrl = await readChatImage(file);
+      void sendDm({
+        recipientId: peer._id as never,
+        gifUrl: dataUrl,
+        gifThumb: dataUrl,
+        replyToId: replyTo ? (replyTo._id as never) : undefined,
+      }).catch(() => undefined);
+      setReplyTo(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Görsel gönderilemedi.");
+    }
+  };
+
+  const saveEdit = () => {
+    if (!editing) return;
+    const clean = editing.text.trim();
+    if (clean) void editDm({ messageId: editing._id as never, text: clean }).catch(() => undefined);
+    setEditing(null);
   };
 
   const loadGifs = async (q: string) => {
@@ -166,11 +548,22 @@ function DmView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* ============ Discord-style top call banner (when a call is live) ============ */}
+      {callState.active && callState.peerName && (
+        <CallBanner
+          state={callState.ringing ? "ringing" : "active"}
+          peerName={callState.peerName}
+          peerAvatar={callState.peerAvatar}
+          selfUser={user ? { _id: user._id, name: user.name ?? "Misafir", avatarUrl: user.avatarUrl ?? undefined } : null}
+          onHangUp={endActiveCall}
+        />
+      )}
+
       <div className="flex items-center gap-2 border-b border-white/5 p-3">
         <Button size="icon" variant="ghost" className="size-7 text-zinc-400 hover:bg-white/10" onClick={onBack} title="Geri">
           <ArrowLeft className="size-4" />
         </Button>
-        <Avatar user={peer} size={7} />
+        <ProfileAvatar user={peer} size={7} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold text-zinc-100">{peer.name}</p>
           {peer.statusMessage && <p className="truncate text-[10px] text-zinc-600">{peer.statusMessage}</p>}
@@ -190,7 +583,8 @@ function DmView({
           <p className="py-6 text-center text-xs text-zinc-600">{peer.name} ile sohbetin burada başlar.</p>
         )}
         {messages.map((m) => (
-          <div key={m._id} className={cn("flex flex-col", m.mine ? "items-end" : "items-start")}>
+          <div key={m._id} className={cn("group relative flex flex-col", m.mine ? "items-end" : "items-start")}>
+            {m.replyTo && <ReplyPreview userName={m.replyTo.userName} text={m.replyTo.text} />}
             <div
               className={cn(
                 "max-w-[85%] rounded-xl px-2.5 py-1.5",
@@ -198,16 +592,61 @@ function DmView({
               )}
             >
               {m.text && <MentionText text={m.text} selfName={user?.name ?? undefined} />}
-              {m.gifUrl && <img src={m.gifThumb ?? m.gifUrl} alt="GIF" className="mt-1 max-h-36 rounded-md" loading="lazy" />}
+              {m.gifUrl && <img src={m.gifThumb ?? m.gifUrl} alt="Medya" className="mt-1 max-h-36 rounded-md" loading="lazy" />}
             </div>
-            {m.mine && (
-              <span className="mt-0.5 flex items-center gap-1 pr-1 text-[9px] text-zinc-600">
-                <ReadTicks read={m.read === true} />
-              </span>
-            )}
+            <span className="mt-0.5 flex items-center gap-1.5 px-1 text-[9px] text-zinc-600">
+              {formatStamp(m.createdAt)}
+              {m.editedAt !== undefined && <span className="italic">(düzenlendi)</span>}
+              {m.mine && <ReadTicks read={m.read === true} />}
+            </span>
+            <MessageActions
+              mine={m.mine}
+              onReply={() => setReplyTo({ _id: m._id, userName: m.senderName ?? peer.name, text: m.text })}
+              onEdit={() => setEditing({ _id: m._id, text: m.text ?? "" })}
+              onDelete={() => void deleteDm({ messageId: m._id as never }).catch(() => undefined)}
+            />
           </div>
         ))}
+        <TypingRow names={typingNames} />
       </div>
+
+      {editing && (
+        <div className="ordex-inset flex items-center gap-2 border-t border-white/5 p-2">
+          <Pencil className="size-3.5 shrink-0 text-amber-400" />
+          <Input
+            value={editing.text}
+            autoFocus
+            onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                saveEdit();
+              }
+              if (e.key === "Escape") setEditing(null);
+            }}
+            className="h-8 flex-1 border-white/10 bg-[var(--ordex-panel-2)] text-xs"
+          />
+          <Button size="sm" className="h-8 px-2 text-xs" onClick={saveEdit}>
+            Kaydet
+          </Button>
+          <Button size="icon" variant="ghost" className="size-8 text-zinc-500" onClick={() => setEditing(null)}>
+            <X className="size-4" />
+          </Button>
+        </div>
+      )}
+
+      {replyTo && (
+        <div className="ordex-inset flex items-center gap-2 border-t border-white/5 p-2">
+          <Reply className="size-3.5 shrink-0 text-[var(--ordex-accent)]" />
+          <p className="min-w-0 flex-1 truncate text-[11px] text-zinc-400">
+            <span className="font-semibold text-zinc-200">{replyTo.userName}</span>
+            {replyTo.text ? ` — ${replyTo.text}` : " — medya"}
+          </p>
+          <Button size="icon" variant="ghost" className="size-7 text-zinc-500" onClick={() => setReplyTo(null)}>
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      )}
 
       {showGifs && (
         <div className="ordex-inset border-t border-white/5 p-2">
@@ -246,7 +685,26 @@ function DmView({
         </div>
       )}
 
-      <div className="flex items-center gap-2 border-t border-white/5 p-2">
+      <div className="flex items-center gap-1.5 border-t border-white/5 p-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8 shrink-0 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          title="Fotoğraf / medya gönder"
+          onClick={() => fileRef.current?.click()}
+        >
+          <Plus className="size-4" />
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            void sendImage(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
         <Button
           size="icon"
           variant="ghost"
@@ -257,11 +715,14 @@ function DmView({
             if (!showGifs && gifs.length === 0 && !gifLoading) void loadGifs("");
           }}
         >
-          <ImageIcon className="size-4" />
+          <Smile className="size-4" />
         </Button>
         <Input
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            handleType();
+          }}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
           placeholder={`${peer.name} kullanıcısına mesaj... (@bahset)`}
           className="ordex-inset h-9 border-white/10 text-xs"
@@ -294,14 +755,42 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
   const messages = useQuery(api.dms.listGroupMessages, { groupId }) ?? [];
   const markRead = useMutation(api.dms.markGroupRead);
   const sendMsg = useMutation(api.dms.sendGroupMessage);
+  const editMsg = useMutation(api.dms.editGroupMessage);
+  const deleteMsg = useMutation(api.dms.deleteGroupMessage);
   const renameGroup = useMutation(api.dms.renameGroup);
   const leaveGroup = useMutation(api.dms.leaveGroup);
+  const setTyping = useMutation(api.dms.setTyping);
+  const clearTyping = useMutation(api.dms.clearTyping);
   const searchGifs = useActionSafe();
 
   const [text, setText] = useState("");
+  const [replyTo, setReplyTo] = useState<{ _id: string; userName: string; text?: string } | null>(null);
+  const [editing, setEditing] = useState<{ _id: string; text: string } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [showGifs, setShowGifs] = useState(false);
+  const [gifs, setGifs] = useState<{ id: string; url: string; preview: string; desc: string }[]>([]);
+  const [gifLoading, setGifLoading] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Typing: same ephemeral pattern as DMs, scoped to the group id.
+  const typing = useQuery(api.dms.listTyping, { scope: "group", targetId: groupId });
+  const typingNames = (typing ?? []).map((t) => t.userName);
+  const lastTypingSentRef = useRef(0);
+  const handleType = () => {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current > 3000) {
+      lastTypingSentRef.current = now;
+      void setTyping({ scope: "group", targetId: groupId }).catch(() => undefined);
+    }
+  };
+  const stopTyping = () => {
+    if (lastTypingSentRef.current !== 0) {
+      lastTypingSentRef.current = 0;
+      void clearTyping({ scope: "group", targetId: groupId }).catch(() => undefined);
+    }
+  };
 
   useEffect(() => {
     void markRead({ groupId }).catch(() => undefined);
@@ -309,13 +798,58 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages.length]);
+  }, [messages.length, typingNames.length]);
+
+  useEffect(() => stopTyping, [groupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const send = (gif?: { url: string; preview: string }) => {
     const clean = text.trim();
     if (!clean && !gif) return;
     setText("");
-    void sendMsg({ groupId, text: clean || undefined, gifUrl: gif?.url, gifThumb: gif?.preview }).catch(() => undefined);
+    setReplyTo(null);
+    stopTyping();
+    void sendMsg({
+      groupId,
+      text: clean || undefined,
+      gifUrl: gif?.url,
+      gifThumb: gif?.preview,
+      replyToId: replyTo ? (replyTo._id as never) : undefined,
+    }).catch(() => undefined);
+  };
+
+  const sendImage = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const dataUrl = await readChatImage(file);
+      void sendMsg({
+        groupId,
+        gifUrl: dataUrl,
+        gifThumb: dataUrl,
+        replyToId: replyTo ? (replyTo._id as never) : undefined,
+      }).catch(() => undefined);
+      setReplyTo(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Görsel gönderilemedi.");
+    }
+  };
+
+  const saveEdit = () => {
+    if (!editing) return;
+    const clean = editing.text.trim();
+    if (clean) void editMsg({ messageId: editing._id as never, text: clean }).catch(() => undefined);
+    setEditing(null);
+  };
+
+  const loadGifs = async (q: string) => {
+    setGifLoading(true);
+    try {
+      const result = await searchGifs({ query: q });
+      setGifs(result.gifs);
+    } catch {
+      /* best-effort */
+    } finally {
+      setGifLoading(false);
+    }
   };
 
   if (!group) {
@@ -392,9 +926,19 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
         {messages.length === 0 && <p className="py-6 text-center text-xs text-zinc-600">Grup sohbeti burada başlar.</p>}
         {messages.map((m) => (
-          <div key={m._id} className={cn("flex flex-col", m.mine ? "items-end" : "items-start")}>
+          <div key={m._id} className={cn("group relative flex flex-col", m.mine ? "items-end" : "items-start")}>
+            {m.replyTo && <ReplyPreview userName={m.replyTo.userName} text={m.replyTo.text} />}
             {!m.mine && (
-              <span className="mb-0.5 px-1 text-[10px] font-semibold text-zinc-500">{m.userName}</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button type="button" className="mb-0.5 px-1 text-[10px] font-semibold text-zinc-500 hover:text-zinc-200" title="Profili gör">
+                    {m.userName}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" className="ordex-panel-2 w-72 border-white/10 p-0">
+                  <UserProfileCard user={{ _id: m.senderId, name: m.userName }} />
+                </PopoverContent>
+              </Popover>
             )}
             <div
               className={cn(
@@ -403,21 +947,137 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
               )}
             >
               {m.text && <MentionText text={m.text} selfName={user?.name ?? undefined} />}
-              {m.gifUrl && <img src={m.gifThumb ?? m.gifUrl} alt="GIF" className="mt-1 max-h-36 rounded-md" loading="lazy" />}
+              {m.gifUrl && <img src={m.gifThumb ?? m.gifUrl} alt="Medya" className="mt-1 max-h-36 rounded-md" loading="lazy" />}
             </div>
-            {m.mine && (
-              <span className="mt-0.5 pr-1 text-zinc-600">
-                <ReadTicks read={m.readByAll === true} />
-              </span>
-            )}
+            <span className="mt-0.5 flex items-center gap-1.5 px-1 text-[9px] text-zinc-600">
+              {formatStamp(m.createdAt)}
+              {m.editedAt !== undefined && <span className="italic">(düzenlendi)</span>}
+              {m.mine && <ReadTicks read={m.readByAll === true} />}
+            </span>
+            <MessageActions
+              mine={m.mine}
+              onReply={() => setReplyTo({ _id: m._id, userName: m.userName, text: m.text })}
+              onEdit={() => setEditing({ _id: m._id, text: m.text ?? "" })}
+              onDelete={() => void deleteMsg({ messageId: m._id as never }).catch(() => undefined)}
+            />
           </div>
         ))}
+        <TypingRow names={typingNames} />
       </div>
 
-      <div className="flex items-center gap-2 border-t border-white/5 p-2">
+      {editing && (
+        <div className="ordex-inset flex items-center gap-2 border-t border-white/5 p-2">
+          <Pencil className="size-3.5 shrink-0 text-amber-400" />
+          <Input
+            value={editing.text}
+            autoFocus
+            onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                saveEdit();
+              }
+              if (e.key === "Escape") setEditing(null);
+            }}
+            className="h-8 flex-1 border-white/10 bg-[var(--ordex-panel-2)] text-xs"
+          />
+          <Button size="sm" className="h-8 px-2 text-xs" onClick={saveEdit}>
+            Kaydet
+          </Button>
+          <Button size="icon" variant="ghost" className="size-8 text-zinc-500" onClick={() => setEditing(null)}>
+            <X className="size-4" />
+          </Button>
+        </div>
+      )}
+
+      {replyTo && (
+        <div className="ordex-inset flex items-center gap-2 border-t border-white/5 p-2">
+          <Reply className="size-3.5 shrink-0 text-[var(--ordex-accent)]" />
+          <p className="min-w-0 flex-1 truncate text-[11px] text-zinc-400">
+            <span className="font-semibold text-zinc-200">{replyTo.userName}</span>
+            {replyTo.text ? ` — ${replyTo.text}` : " — medya"}
+          </p>
+          <Button size="icon" variant="ghost" className="size-7 text-zinc-500" onClick={() => setReplyTo(null)}>
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      )}
+
+      {showGifs && (
+        <div className="ordex-inset border-t border-white/5 p-2">
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="GIF ara..."
+              onKeyDown={(e) => e.key === "Enter" && void loadGifs((e.target as HTMLInputElement).value)}
+              className="h-8 border-white/10 bg-[var(--ordex-panel-2)] text-xs"
+            />
+            <Button size="sm" variant="secondary" className="h-8 px-2 text-xs" onClick={() => void loadGifs("")}>
+              Ara
+            </Button>
+            <Button size="icon" variant="ghost" className="size-8 text-zinc-500" onClick={() => setShowGifs(false)}>
+              <X className="size-4" />
+            </Button>
+          </div>
+          <div className="mt-2 grid max-h-32 grid-cols-3 gap-1.5 overflow-y-auto [scrollbar-width:thin]">
+            {gifLoading && (
+              <div className="col-span-3 flex justify-center py-3">
+                <Loader2 className="size-5 animate-spin text-zinc-500" />
+              </div>
+            )}
+            {gifs.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => {
+                  send({ url: g.url, preview: g.preview });
+                  setShowGifs(false);
+                }}
+                className="overflow-hidden rounded-md border border-transparent hover:border-[var(--ordex-accent)]"
+              >
+                <img src={g.preview} alt={g.desc} className="h-16 w-full object-cover" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-1.5 border-t border-white/5 p-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8 shrink-0 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          title="Fotoğraf / medya gönder"
+          onClick={() => fileRef.current?.click()}
+        >
+          <Plus className="size-4" />
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            void sendImage(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8 shrink-0 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          title="GIF gönder"
+          onClick={() => {
+            setShowGifs((v) => !v);
+            if (!showGifs && gifs.length === 0 && !gifLoading) void loadGifs("");
+          }}
+        >
+          <Smile className="size-4" />
+        </Button>
         <Input
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            handleType();
+          }}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
           placeholder={`${group.name} grubuna mesaj... (@bahset)`}
           className="ordex-inset h-9 border-white/10 text-xs"
@@ -557,49 +1217,11 @@ function CallUi({ call }: { call: ReturnType<typeof useCall> }) {
     );
   }
 
-  // No call in progress: render nothing. (Without this guard the bar used to
-  // show forever with the fallback "Arama / Görüşme sürüyor" text even when
-  // idle — a phantom call UI with no actual call behind it.)
-  if (call.state === "idle") return null;
-
-  const label = call.state === "outgoing-ringing" ? "Aranıyor..." : "Görüşme sürüyor";
-  const peerName = call.peer?.name ?? "Arama";
-
-  return (
-    <div className="fixed bottom-20 left-1/2 z-[9990] w-[calc(100%-2rem)] max-w-xs -translate-x-1/2 md:bottom-4 md:left-4 md:translate-x-0">
-      <div className="ordex-panel-2 flex items-center gap-3 rounded-xl border border-white/10 p-3 shadow-2xl shadow-black/50">
-        <span
-          className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-600/20",
-            call.state !== "active" && "animate-pulse",
-          )}
-        >
-          <Phone className="size-4 text-emerald-400" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-zinc-100">{peerName}</p>
-          <p className="text-[11px] text-zinc-500">{label}</p>
-        </div>
-        <Button
-          size="icon"
-          variant={call.micOn ? "secondary" : "destructive"}
-          className="size-8 shrink-0"
-          title={call.micOn ? "Mikrofonu kapat" : "Mikrofonu aç"}
-          onClick={call.toggleMic}
-        >
-          {call.micOn ? <Mic className="size-3.5" /> : <MicOff className="size-3.5" />}
-        </Button>
-        <Button
-          size="icon"
-          className="size-8 shrink-0 bg-red-600 text-white hover:bg-red-500"
-          title="Aramayı bitir"
-          onClick={call.hangUp}
-        >
-          <PhoneOff className="size-3.5" />
-        </Button>
-      </div>
-    </div>
-  );
+  // Ongoing calls are NOT rendered here anymore: the Discord-style top call
+  // banner (inside an open DM, or the fixed fallback banner in SocialOverlay)
+  // owns the mic / headphone / hang-up controls. Keeping this bottom mini card
+  // would double the call UI and re-create the old panel-collision bug.
+  return null;
 }
 
 // ---------- Global call-state store (room voice panels stay in sync) ----------
@@ -616,23 +1238,44 @@ interface CallStateSnapshot {
   active: boolean;
   /** Peer display name for the compact override card. */
   peerName: string;
+  /** Peer avatar url (top call banner). */
+  peerAvatar?: string;
   /** True while ringing (outgoing or incoming) — drives the pulse animation. */
   ringing: boolean;
+  /** Live mic state — drives the banner's mic-off badge. */
+  micOn: boolean;
+  /** Live deafen state — drives the banner's headphone button. */
+  deafened: boolean;
 }
 
-let callState: CallStateSnapshot = { active: false, peerName: "", ringing: false };
+let callState: CallStateSnapshot = { active: false, peerName: "", ringing: false, micOn: true, deafened: false };
 const callStateListeners = new Set<() => void>();
 
 function setCallState(next: CallStateSnapshot) {
   if (
     callState.active === next.active &&
     callState.peerName === next.peerName &&
-    callState.ringing === next.ringing
+    callState.peerAvatar === next.peerAvatar &&
+    callState.ringing === next.ringing &&
+    callState.micOn === next.micOn &&
+    callState.deafened === next.deafened
   ) {
     return;
   }
   callState = next;
   for (const l of callStateListeners) l();
+}
+
+/** Latest useCall controls, called from the banner via `getCallControls()`. */
+interface CallControls {
+  toggleMic: () => void;
+  toggleDeafen: () => void;
+}
+let callControlsExternal: CallControls | null = null;
+
+/** Live call controls for the top banner (null when SocialOverlay absent). */
+export function getCallControls(): CallControls | null {
+  return callControlsExternal;
 }
 
 export function useCallState(): CallStateSnapshot {
@@ -704,15 +1347,15 @@ export function useHomeSocialView(): SocialView {
 }
 
 // Latest useCall actions from the single SocialOverlay instance.
-let startCallExternal: ((peerId: string, peerName: string) => void) | null = null;
+let startCallExternal: ((peerId: string, peerName: string, peerAvatar?: string) => void) | null = null;
 
 /**
  * Starts a 1:1 voice call from anywhere (home page, panels). Delegates to the
  * single SocialOverlay's useCall instance so call state stays in one place —
  * mounting a second useCall would fork the WebRTC state.
  */
-export function startCallWith(peerId: string, peerName: string) {
-  startCallExternal?.(peerId, peerName);
+export function startCallWith(peerId: string, peerName: string, peerAvatar?: string) {
+  startCallExternal?.(peerId, peerName, peerAvatar);
 }
 
 /**
@@ -725,7 +1368,7 @@ export function startCallWith(peerId: string, peerName: string) {
  */
 export function HomeSocialStage({ view }: { view: SocialView }) {
   const startCallTo = useCallback(
-    (peer: PublicUserLite) => startCallWith(peer._id, peer.name),
+    (peer: PublicUserLite) => startCallWith(peer._id, peer.name, peer.avatarUrl),
     [],
   );
 
@@ -809,10 +1452,13 @@ export function openCreateGroupModal() {
 export function SocialOverlay() {
   useSoundBus();
   const call = useCall();
+  const { user } = useAuth();
   const currentRoom = useActiveRoom();
   const inRoom = currentRoom !== undefined;
   const [view, setView] = useState<SocialView>(null);
+  const homeView = useHomeSocialView();
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const dmOpen = view?.kind === "dm" || homeView?.kind === "dm";
 
   // Leaving a room drops any open slide-over chat; the home page owns the
   // full-screen stage instead, so the old window can never linger over it.
@@ -827,14 +1473,27 @@ export function SocialOverlay() {
     };
   }, []);
 
-  // Publish call state to room voice panels (they read `useCallState`).
+  // Publish full call state to every panel that reads `useCallState`:
+  // room voice cards, the top call banner and the bottom-left profile bar.
   useEffect(() => {
     setCallState({
       active: call.state !== "idle" || call.incoming !== null,
       peerName: call.incoming?.peerName ?? call.peer?.name ?? "",
+      peerAvatar: call.incoming?.peerAvatar ?? call.peer?.avatarUrl,
       ringing: call.incoming !== null || call.state === "outgoing-ringing",
+      micOn: call.micOn,
+      deafened: call.deafened,
     });
-  }, [call.state, call.incoming, call.peer]);
+  }, [call.state, call.incoming, call.peer, call.micOn, call.deafened]);
+
+  // Expose the live mic/headphone toggles to the call banner (the banner
+  // renders outside this component's call hook scope).
+  useEffect(() => {
+    callControlsExternal = { toggleMic: call.toggleMic, toggleDeafen: call.toggleDeafen };
+    return () => {
+      callControlsExternal = null;
+    };
+  }, [call.toggleMic, call.toggleDeafen]);
 
   // Imperative end-call handle: reject incoming, hang up ongoing.
   const callRef = useRef(call);
@@ -852,13 +1511,13 @@ export function SocialOverlay() {
   }, []);
 
   const startCallTo = (peer: PublicUserLite) => {
-    void call.start(peer._id as Id<"users">, peer.name);
+    void call.start(peer._id as Id<"users">, peer.name, peer.avatarUrl);
   };
 
   // Single start-call handle for the whole app (home page panels call this).
   useEffect(() => {
-    startCallExternal = (peerId, peerName) => {
-      void call.start(peerId as Id<"users">, peerName);
+    startCallExternal = (peerId, peerName, peerAvatar) => {
+      void call.start(peerId as Id<"users">, peerName, peerAvatar);
     };
     return () => {
       startCallExternal = null;
@@ -876,6 +1535,27 @@ export function SocialOverlay() {
     <>
       <SocialWatcher />
       <CallUi call={call} />
+
+      {/* Fixed fallback banner: when a call is live but no DM chat is open
+          (started from the friends list), the banner still floats on top of
+          the stage so mic / headphone / hang-up are always reachable. */}
+      {call.state !== "idle" && !call.incoming && !dmOpen && (
+        <div className="fixed left-1/2 top-0 z-[9986] w-full max-w-lg -translate-x-1/2 px-2 pt-2">
+          <div className="ordex-panel-2 overflow-hidden rounded-xl border border-white/10 shadow-2xl shadow-black/60">
+            <CallBanner
+              state={call.state === "outgoing-ringing" ? "ringing" : "active"}
+              peerName={call.peer?.name ?? "Arama"}
+              peerAvatar={call.peer?.avatarUrl}
+              selfUser={
+                user
+                  ? { _id: user._id, name: user.name ?? "Misafir", avatarUrl: user.avatarUrl ?? undefined }
+                  : null
+              }
+              onHangUp={() => call.hangUp()}
+            />
+          </div>
+        </div>
+      )}
 
       {/* DM / Group window — slide-over inside rooms; on the home page the
           same views render full-screen via <HomeSocialStage view={...} />

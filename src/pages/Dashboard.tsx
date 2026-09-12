@@ -30,6 +30,7 @@ import {
   useHomeSocialView,
   useUnreadBadges,
 } from "@/components/social/SocialOverlay";
+import { ProfileBar } from "@/components/social/ProfileBar";
 
 /**
  * ÖRDEX home — a Discord-style standalone shell. Room management, DMs, groups
@@ -301,6 +302,9 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {/* Discord-style bottom profile bar (status + quick controls) */}
+            <ProfileBar onOpenSettings={() => setSettingsOpen(true)} />
           </aside>
         )}
 

@@ -1,16 +1,10 @@
 import { api } from "@/convex/_generated/api";
-import { useAuth } from "@/hooks/use-auth";
-import { avatarHue, initials } from "@/lib/utils-room";
 import { useMutation, useQuery } from "convex/react";
 import {
-  Compass,
   Hash,
   Lock,
-  LogOut,
   MessageSquare,
-  Pencil,
   Plus,
-  Settings,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -24,6 +18,7 @@ import { SettingsModal } from "@/components/SettingsModal";
 import { CountBadge, useUnreadBadges } from "@/components/social/SocialOverlay";
 import { FriendsPanel, type FriendsView } from "@/components/social/FriendsPanel";
 import { MessagesPanel } from "@/components/social/MessagesPanel";
+import { ProfileBar } from "@/components/social/ProfileBar";
 
 /**
  * Left panel with a Discord-style TOP NAVIGATION BAR (ÖRDEX rev.4):
@@ -44,7 +39,6 @@ const FRIENDS_VIEWS: { id: FriendsView; label: string; icon?: typeof UserPlus }[
 ];
 
 export function LeftPanel({ activeCode }: { activeCode?: string }) {
-  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("rooms");
   const [friendsView, setFriendsView] = useState<FriendsView>("all");
@@ -77,21 +71,6 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
   };
 
   const socialBadge = badges.dmTotal + badges.groupTotal;
-
-  const avatar = user?.avatarUrl ? (
-    <img
-      src={user.avatarUrl}
-      alt={user.name ?? "Avatar"}
-      className="size-8 shrink-0 rounded-full border border-white/15 object-cover"
-    />
-  ) : (
-    <span
-      className="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-      style={{ background: `hsl(${avatarHue(user?._id ?? "x")} 65% 45%)` }}
-    >
-      {initials(user?.name ?? "Misafir")}
-    </span>
-  );
 
   const navBtn = (active: boolean) =>
     cn(
@@ -252,53 +231,8 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
         <FriendsPanel view={friendsView} />
       )}
 
-      {/* Profile + unified settings (Discord-style single modal) */}
-      <div className="ordex-inset flex items-center gap-1 border-t border-white/5 px-2 py-2">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 pr-2 text-left transition-colors hover:bg-[var(--ordex-panel-3)]"
-          title="Profil ve ayarlar"
-          onClick={() => setSettingsOpen(true)}
-        >
-          {avatar}
-          <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate text-sm font-medium text-zinc-100">
-              {user?.name ?? "Misafir"}
-            </span>
-            <span className="block truncate text-[11px] text-[var(--ordex-muted)]">
-              {user?.statusMessage || "Çevrimiçi"}
-            </span>
-          </span>
-          <Pencil className="size-3.5 shrink-0 text-[var(--ordex-muted)]" />
-        </button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8 shrink-0 text-[var(--ordex-muted)] hover:bg-white/10 hover:text-zinc-100"
-          title="Ayarlar (profil, tema, hesap)"
-          onClick={() => setSettingsOpen(true)}
-        >
-          <Settings className="size-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8 shrink-0 text-[var(--ordex-muted)] hover:bg-white/10 hover:text-zinc-100"
-          title="Ana sayfa"
-          onClick={() => navigate("/")}
-        >
-          <Compass className="size-4" />
-        </Button>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-8 shrink-0 text-[var(--ordex-muted)] hover:bg-white/10 hover:text-red-400"
-          title="Çıkış"
-          onClick={() => void signOut()}
-        >
-          <LogOut className="size-4" />
-        </Button>
-      </div>
+      {/* Discord-style bottom profile bar (status + quick controls) */}
+      <ProfileBar onOpenSettings={() => setSettingsOpen(true)} />
 
       <CreateRoomModal open={createOpen} onOpenChange={setCreateOpen} />
       <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />

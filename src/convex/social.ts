@@ -247,24 +247,38 @@ export const listDmContacts = query({
   },
 });
 
-/** Send a direct message (text or GIF) to a friend/user. */
+/** Send a direct message (text/GIF/reply) to a friend/user. */
 export const sendDm = mutation({
   args: {
     recipientId: v.id("users"),
     text: v.optional(v.string()),
     gifUrl: v.optional(v.string()),
     gifThumb: v.optional(v.string()),
+    replyToId: v.optional(v.id("dms")),
   },
   handler: async (ctx, args) => {
     const me = await requireUser(ctx);
+    const user = await ctx.db.get(me);
     const text = args.text?.trim().slice(0, 2000);
     if (!text && !args.gifUrl) throw new Error("Mesaj boş.");
+    // Sanity: a reply must reference a DM inside this same conversation.
+    let replyToId: Id<"dms"> | undefined;
+    if (args.replyToId) {
+      const src = await ctx.db.get(args.replyToId);
+      const inConversation =
+        src &&
+        ((src.senderId === me && src.recipientId === args.recipientId) ||
+          (src.senderId === args.recipientId && src.recipientId === me));
+      if (inConversation) replyToId = args.replyToId;
+    }
     await ctx.db.insert("dms", {
       senderId: me,
+      senderName: user?.name ?? "Misafir",
       recipientId: args.recipientId,
       text: text || undefined,
       gifUrl: args.gifUrl,
       gifThumb: args.gifThumb,
+      replyToId,
       createdAt: Date.now(),
     });
   },

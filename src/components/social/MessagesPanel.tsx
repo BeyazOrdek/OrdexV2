@@ -8,7 +8,7 @@ import {
   openSocialView,
   useUnreadBadges,
 } from "@/components/social/SocialOverlay";
-import { initials } from "@/lib/utils-room";
+import { ProfileAvatar } from "@/components/social/SocialOverlay";
 
 interface DmContact {
   _id: string;
@@ -48,17 +48,7 @@ export function MessagesPanel() {
             onClick={() => openSocialView({ kind: "dm", peer: u })}
             className="ordex-inset mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--ordex-panel-3)]"
           >
-            {u.avatarUrl ? (
-              <img
-                src={u.avatarUrl}
-                alt={u.name}
-                className="size-8 shrink-0 rounded-full border border-white/15 object-cover"
-              />
-            ) : (
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--ordex-panel-3)] text-[10px] font-bold text-[var(--ordex-accent)]">
-                {initials(u.name)}
-              </span>
-            )}
+            <ProfileAvatar user={u} size={8} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs text-zinc-100">{u.name}</span>
               {u.statusMessage && (

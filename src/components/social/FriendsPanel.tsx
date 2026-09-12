@@ -24,6 +24,7 @@ import {
   openCreateGroupModal,
   openSocialView,
   startCallWith,
+  ProfileAvatar,
   useUnreadBadges,
 } from "@/components/social/SocialOverlay";
 
@@ -255,7 +256,7 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
                 onClick={() => openDm(u)}
                 className="ordex-inset mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--ordex-panel-3)]"
               >
-                <UserAvatar user={u} online={isOnline(u._id)} />
+                <ProfileAvatar user={u} size={8} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-xs text-zinc-100">{u.name}</span>
                   {u.statusMessage && (
@@ -392,7 +393,7 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
             )}
             {(view === "online" ? onlineFriends : friends).map((u) => (
               <div key={u._id} className="ordex-inset group mb-1 flex items-center gap-2 rounded-md px-2 py-1.5">
-                <UserAvatar user={u} online={isOnline(u._id)} sharing={isSharing(u._id)} />
+                <ProfileAvatar user={u} size={8} />
                 <span className="min-w-0 flex-1">
                   <span
                     className="block truncate text-xs font-medium"
@@ -418,7 +419,7 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
                   variant="ghost"
                   className="size-6 text-[var(--ordex-muted)] hover:bg-white/10 hover:text-emerald-400"
                   title="Sesli ara"
-                  onClick={() => startCallWith(u._id, u.name)}
+                  onClick={() => startCallWith(u._id, u.name, u.avatarUrl)}
                 >
                   <Phone className="size-3.5" />
                 </Button>

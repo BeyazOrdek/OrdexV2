@@ -16,6 +16,9 @@ const ICE_SERVERS: RTCIceServer[] = [
 
 export type CallState = "idle" | "outgoing-ringing" | "active";
 
+/** Phase of the live call, for the Discord-style top banner + profile bar. */
+export type CallPhase = "incoming" | "outgoing" | "active" | null;
+
 export interface IncomingCall {
   callId: Id<"calls">;
   peerName: string;
@@ -29,12 +32,15 @@ interface CallApi {
   peer: { name: string; avatarUrl?: string; statusMessage?: string } | null;
   /** Someone is ringing us right now (drives the Accept/Reject popup). */
   incoming: IncomingCall | null;
-  start: (peerUserId: Id<"users">, peerName: string) => Promise<void>;
+  start: (peerUserId: Id<"users">, peerName: string, peerAvatar?: string) => Promise<void>;
   accept: () => Promise<void>;
   reject: () => void;
   hangUp: () => void;
   micOn: boolean;
   toggleMic: () => void;
+  /** Remote audio muted (kulaklık kapalı) — mutes playback only, not the call. */
+  deafened: boolean;
+  toggleDeafen: () => void;
 }
 
 /** Isolated <body>-level container for remote call audio (never in React's tree). */
@@ -55,6 +61,7 @@ export function useCall(): CallApi {
   const [state, setState] = useState<CallState>("idle");
   const [peer, setPeer] = useState<CallApi["peer"]>(null);
   const [micOn, setMicOn] = useState(true);
+  const [deafened, setDeafened] = useState(false);
 
   const startCall = useMutation(api.dms.startCall);
   const acceptCallM = useMutation(api.dms.acceptCall);
@@ -84,6 +91,8 @@ export function useCall(): CallApi {
   const politeRef = useRef(true);
   const ignoringOfferRef = useRef(false);
   const activeCallIdRef = useRef<Id<"calls"> | null>(null);
+  // Mirror for event handlers created before `deafened` existed.
+  const deafenedRef = useRef(false);
 
   const sendSignal = useCallback(
     (
@@ -140,6 +149,7 @@ export function useCall(): CallApi {
       setState("idle");
       setPeer(null);
       setMicOn(true);
+      setDeafened(false);
       if (playHangupTone) playSound("hangup");
     },
     [teardownPeer],
@@ -170,6 +180,7 @@ export function useCall(): CallApi {
         if (remoteStream && audioEl.srcObject !== remoteStream) {
           audioEl.srcObject = remoteStream;
         }
+        audioEl.muted = deafenedRef.current;
         // Autoplay guard: retry on the next user gesture if blocked.
         audioEl.play().catch(() => {
           const resume = () => {
@@ -239,9 +250,9 @@ export function useCall(): CallApi {
   // ---- Public actions ----
 
   const start = useCallback(
-    async (peerUserId: Id<"users">, peerName: string) => {
+    async (peerUserId: Id<"users">, peerName: string, peerAvatar?: string) => {
       if (activeCallIdRef.current || state !== "idle") return;
-      setPeer({ name: peerName });
+      setPeer({ name: peerName, avatarUrl: peerAvatar });
       setState("outgoing-ringing");
       try {
         const { callId } = await startCall({ calleeId: peerUserId, callerSession: sessionId });
@@ -291,6 +302,17 @@ export function useCall(): CallApi {
     const next = !stream.getAudioTracks().every((t) => t.enabled);
     for (const t of stream.getAudioTracks()) t.enabled = next;
     setMicOn(next);
+  }, []);
+
+  // Kulaklık: mute only the remote <audio> element — the WebRTC stream keeps
+  // flowing, so un-deafening restores the peer's voice instantly.
+  const toggleDeafen = useCallback(() => {
+    setDeafened((d) => {
+      const next = !d;
+      deafenedRef.current = next;
+      if (audioElRef.current) audioElRef.current.muted = next;
+      return next;
+    });
   }, []);
 
   // ---- Ring/dial loops (derived, no effect churn) ----
@@ -406,5 +428,7 @@ export function useCall(): CallApi {
     hangUp,
     micOn,
     toggleMic,
+    deafened,
+    toggleDeafen,
   };
 }

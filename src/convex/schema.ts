@@ -167,12 +167,17 @@ const schema = defineSchema(
     dms: defineTable({
       senderId: v.id("users"),
       recipientId: v.id("users"),
+      senderName: v.optional(v.string()),
       text: v.optional(v.string()),
       gifUrl: v.optional(v.string()),
       gifThumb: v.optional(v.string()),
       // Read receipt: set when the recipient opens the conversation.
       readAt: v.optional(v.number()),
       createdAt: v.number(),
+      // Discord-style reply: id of the DM this message quotes.
+      replyToId: v.optional(v.id("dms")),
+      // "düzenlendi" tag timestamp (undefined = never edited).
+      editedAt: v.optional(v.number()),
     })
       .index("by_pair", ["senderId", "recipientId"])
       .index("by_recipient", ["recipientId"]),
@@ -234,7 +239,25 @@ const schema = defineSchema(
       // Read receipts: member ids that opened the group after this message.
       readBy: v.array(v.id("users")),
       createdAt: v.number(),
+      replyToId: v.optional(v.id("groupMessages")),
+      editedAt: v.optional(v.number()),
     }).index("by_group", ["groupId"]),
+
+    // Typing indicators (ephemeral rows, TTL-swept by the writer).
+    typing: defineTable({
+      scope: v.union(
+        v.literal("dm"),
+        v.literal("group"),
+        v.literal("room"),
+      ),
+      // dm → peer user id, group → group id, room → room id.
+      targetId: v.string(),
+      userId: v.id("users"),
+      userName: v.string(),
+      updatedAt: v.number(),
+    })
+      .index("by_scope_target", ["scope", "targetId"])
+      .index("by_user", ["userId"]),
   },
   {
     schemaValidation: false,
