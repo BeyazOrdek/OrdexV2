@@ -67,6 +67,10 @@ const schema = defineSchema(
       positionSec: v.number(),
       mediaUpdatedAt: v.number(),
       mediaUpdatedBy: v.string(), // sessionId of last controller
+      // Monotonic playback-op counter. Guards against out-of-order writes:
+      // a stale background tick can never resurrect an old play/pause state
+      // over a newer user intent (the classic "button does nothing" bug).
+      mediaSeq: v.optional(v.number()),
     }).index("by_code", ["code"]),
 
     memberships: defineTable({

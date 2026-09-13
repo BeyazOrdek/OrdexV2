@@ -18,7 +18,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -26,11 +26,8 @@ import { Slider } from "@/components/ui/slider";
 interface MediaPanelProps {
   roomName: string;
   roomCode: string;
-  sync: MediaSync;
-  /** Disposable inner host the YT iframe mounts into (callback ref from useMediaSync). */
+  sync: MediaSync;  /** Disposable inner host the YT iframe mounts into (callback ref from useMediaSync). */
   ytHostRef: (node: HTMLDivElement | null) => void;
-  /** HTML5 <video> element for direct files (always mounted). */
-  videoRef: RefObject<HTMLVideoElement | null>;
   onAddLink: (media: ParsedMediaLink) => void;
   onNext: () => void;
   localStream: MediaStream | null;
@@ -44,7 +41,6 @@ export function MediaPanel({
   roomCode,
   sync,
   ytHostRef,
-  videoRef,
   onAddLink,
   onNext,
   localStream,
@@ -121,6 +117,29 @@ export function MediaPanel({
 
   return (
     <section className="ordex-bg flex h-full min-h-0 w-full flex-col">
+      {/* SVG sharpen filter used by the HD Boost toggle (see .ordex-hdboost in
+          index.css). Rendered once, zero-size so it never affects layout. */}
+      <svg
+        aria-hidden="true"
+        focusable="false"
+        width="0"
+        height="0"
+        style={{ position: "absolute" }}
+      >
+        <defs>
+          <filter id="ordex-unsharp" x="-5%" y="-5%" width="110%" height="110%">
+            {/* 3×3 unsharp kernel: center 1.6 minus light cross-neighborhood
+                — visibly sharper text/edges without halos or grid artifacts. */}
+            <feConvolveMatrix
+              order="3 3"
+              preserveAlpha="true"
+              edgeMode="duplicate"
+              kernelMatrix="0 -0.35 0 -0.35 2.4 -0.35 0 -0.35 0"
+              divisor="1"
+            />
+          </filter>
+        </defs>
+      </svg>
       {/* Player area */}
       <div
         ref={stageRef}
@@ -136,9 +155,11 @@ export function MediaPanel({
             ref={ytHostRef}
             className={cn("absolute inset-0 size-full [&_iframe]:size-full", isDirect && "invisible")}
           />
-          {/* Direct HTML5 video — always mounted; only visible for direct files. */}
+          {/* Direct HTML5 video — always mounted; only visible for direct files.
+              Bound via the sync's callback ref so the sync engine re-binds its
+              event listeners whenever this element re-attaches (tab switches). */}
           <video
-            ref={videoRef}
+            ref={sync.videoElementRef}
             playsInline
             controls={false}
             className={cn(
@@ -156,6 +177,14 @@ export function MediaPanel({
               <p className="max-w-xs text-xs text-zinc-600">
                 Aşağıya bir YouTube veya doğrudan video linki yapıştır — odadaki herkeste aynı anda, senkron oynar.
               </p>
+            </div>
+          )}
+          {sync.error && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center p-4">
+              <div className="max-w-sm rounded-lg border border-red-500/30 bg-black/85 p-4 text-center backdrop-blur">
+                <p className="text-sm font-semibold text-red-400">Video oynatılamadı</p>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-400">{sync.error}</p>
+              </div>
             </div>
           )}
         </div>
@@ -271,7 +300,7 @@ export function MediaPanel({
                   ? "bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)]"
                   : "bg-white/10 text-zinc-200 hover:bg-white/15",
               )}
-              title={hdBoost ? "HD Boost açık (720p→1080p netleştirme)" : "HD Boost: MP4 netliğini artır"}
+              title={hdBoost ? "HD Boost açık (netleştirme + renk canlılığı)" : "HD Boost: MP4 netliğini artır"}
               aria-pressed={hdBoost}
               onClick={toggleHdBoost}
             >

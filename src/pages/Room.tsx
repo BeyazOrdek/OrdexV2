@@ -379,7 +379,6 @@ function RoomView({
         roomCode={roomCode}
         sync={sync}
         ytHostRef={ytHostRef}
-        videoRef={syncVideoRef}
         onAddLink={addLink}
         onNext={skipToNext}
         localStream={voice.localStream}

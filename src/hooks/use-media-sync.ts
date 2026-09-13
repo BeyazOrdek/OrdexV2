@@ -38,6 +38,7 @@ interface YTNamespace {
         onReady?: () => void;
         onStateChange?: (event: { data: number }) => void;
         onApiChange?: () => void;
+        onError?: (event: { data: number }) => void;
       };
     },
   ) => YTPlayer;
@@ -95,6 +96,8 @@ export interface RoomMediaState {
   positionSec: number;
   mediaUpdatedAt: number;
   mediaUpdatedBy: string;
+  /** Monotonic op counter bumped by the server on every accepted write. */
+  mediaSeq?: number;
 }
 
 export interface UseMediaSyncOptions {
@@ -112,12 +115,20 @@ export interface MediaSync {
    * React owns the div itself; only its children are managed externally.
    */
   ytHostRef: (node: HTMLDivElement | null) => void;
+  /**
+   * Callback ref for the direct-file <video>. Wraps the caller's ref and
+   * re-binds the sync event listeners whenever the element re-attaches
+   * (mobile tab switches, panel toggles).
+   */
+  videoElementRef: (node: HTMLVideoElement | null) => void;
   mediaType: MediaType | null;
   ready: boolean;
   playing: boolean;
   currentTime: number;
   duration: number;
   buffering: boolean;
+  /** Player-level failure (YouTube rejected the video / network error). */
+  error: string | null;
   volume: number;
   muted: boolean;
   hasVideo: boolean;
@@ -216,6 +227,24 @@ export function useMediaSync({
     },
     [],
   );
+  /**
+   * The HTML5 <video> element re-attaches whenever its panel re-mounts
+   * (mobile tab switches, panel toggles). Listeners must re-bind to the new
+   * node or the play/pause button silently desyncs from the element — so the
+   * binding effect keys off this version counter, not just mount-once.
+   */
+  const [videoElVersion, setVideoElVersion] = useState(0);
+  const videoElementRef = useCallback(
+    (node: HTMLVideoElement | null) => {
+      videoRef.current = node;
+      // A fresh element knows nothing about the current source — clear the
+      // applied-state marker so the apply effect re-attaches the media
+      // (src + position + play state) immediately on the next commit.
+      directAppliedRef.current = "";
+      setVideoElVersion((v) => v + 1);
+    },
+    [videoRef],
+  );
   const ytReadyRef = useRef(false);
   const applyingRef = useRef(false); // true while applying a remote change (don't echo back)
   const ytAppliedRef = useRef("");
@@ -229,6 +258,7 @@ export function useMediaSync({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [buffering, setBuffering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [volume, setVolumeState] = useState(70);
   const [muted, setMuted] = useState(false);
   const [endedMediaKey, setEndedMediaKey] = useState<string | undefined>(undefined);
@@ -239,6 +269,14 @@ export function useMediaSync({
   useEffect(() => {
     onEndedRef.current = onEnded;
   }, [onEnded]);
+
+  // Mirror the last-seen media seq into a ref so `publish` stays referentially
+  // stable — putting it in the deps would rebuild the 1s ticker every second
+  // (the interval would then never actually fire).
+  const mediaSeqRef = useRef(0);
+  useEffect(() => {
+    mediaSeqRef.current = state?.mediaSeq ?? 0;
+  }, [state?.mediaSeq]);
 
   const publish = useCallback(
     (videoId: string, mediaType: MediaType, mediaUrl: string | undefined, isPlaying: boolean, positionSec: number, force = false) => {
@@ -253,6 +291,12 @@ export function useMediaSync({
         isPlaying,
         positionSec,
         sessionId,
+        // Intent writes bypass the server-side stale-tick guard. Background
+        // ticks carry the last seq this client saw, so the server can drop
+        // out-of-order ticks that would resurrect an older play/pause state
+        // (clock-skew-free ordering).
+        force,
+        baseMediaSeq: mediaSeqRef.current,
       });
     },
     [roomId, sessionId, setMedia],
@@ -275,6 +319,14 @@ export function useMediaSync({
       .then((YT) => {
         const host = ytHostRefInternal.current;
         if (cancelled || !host) return;
+        const ytErrorText = (code: number): string => {
+          if (code === 101 || code === 150)
+            return "Bu video sahibi tarafından dış sitelerde oynatmaya kapatılmış (embed devre dışı).";
+          if (code === 100) return "Video bulunamadı — silinmiş veya gizli olabilir.";
+          if (code === 2) return "Geçersiz video kimliği.";
+          if (code === 5) return "Bu video tarayıcınızda oynatılamıyor (HTML5 oynatıcı hatası).";
+          return "Video oynatıcı bir hata verdi.";
+        };
         // NEVER hand a React-managed node to the YT API: it *replaces* that
         // node with the iframe, which corrupts React's virtual DOM and makes
         // the next commit crash with "insertBefore ... not a child of this
@@ -319,6 +371,12 @@ export function useMediaSync({
               const p = playerRef.current;
               if (cancelled || !p) return;
               killCaptionsAndBoostQuality(p);
+            },
+            onError: (event) => {
+              // Embed-blocked (101/150), deleted (100) etc. videos used to fail
+              // SILENTLY — the play button worked but nothing ever played.
+              if (cancelled) return;
+              setError(ytErrorText(event.data));
             },
             onStateChange: (event) => {
               if (cancelled) return;
@@ -394,7 +452,7 @@ export function useMediaSync({
   useEffect(() => {
     const player = playerRef.current;
     if (!player || !ytReadyRef.current || mediaType !== "youtube" || !state?.currentVideoId) return;
-    const key = `${state.currentVideoId}|${state.isPlaying}|${state.positionSec.toFixed(2)}|${state.mediaUpdatedAt}`;
+    const key = `${state.currentVideoId}|${state.isPlaying}|${state.positionSec.toFixed(2)}|${state.mediaSeq ?? 0}`;
     if (key === ytAppliedRef.current) return;
     ytAppliedRef.current = key;
     directAppliedRef.current = "";
@@ -408,6 +466,7 @@ export function useMediaSync({
       const currentId = player.getVideoData?.()?.video_id;
       if (currentId !== state.currentVideoId) {
         setEndedMediaKey(undefined);
+        setError(null); // a fresh video clears a stale player error
         endedFiredRef.current = "";
         // Media switch without destroying the player: load/cue into the
         // existing iframe (keeps React DOM stable, no node replacement).
@@ -454,7 +513,7 @@ export function useMediaSync({
       }
       return;
     }
-    const key = `${state.mediaUrl}|${state.isPlaying}|${state.positionSec.toFixed(2)}|${state.mediaUpdatedAt}`;
+    const key = `${state.mediaUrl}|${state.isPlaying}|${state.positionSec.toFixed(2)}|${state.mediaSeq ?? 0}`;
     if (key === directAppliedRef.current) return;
     directAppliedRef.current = key;
     ytAppliedRef.current = "";
@@ -481,10 +540,12 @@ export function useMediaSync({
           if (drift > HARD_RESYNC_MS / 1000) {
             seekWhenReady(video, target);
           }
-          if (video.paused) playWithAutoplayGuard(video);
+          // ended counts as paused — replay even when the element reports paused
+          if (video.paused || video.ended) playWithAutoplayGuard(video);
         } else {
+          const stillPlaying = !video.paused && !video.ended; // play intent on the same element
           if (drift > 1.5) seekWhenReady(video, target);
-          if (!video.paused) video.pause();
+          if (stillPlaying) video.pause();
         }
       }
     } finally {
@@ -493,16 +554,20 @@ export function useMediaSync({
       }, 400);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state?.currentVideoId, state?.mediaType, state?.mediaUrl, state?.isPlaying, state?.positionSec, state?.mediaUpdatedAt, mediaType]);
+  }, [state?.currentVideoId, state?.mediaType, state?.mediaUrl, state?.isPlaying, state?.positionSec, state?.mediaUpdatedAt, mediaType, videoElVersion]);
 
   // ---- Direct video: local event listeners (drive UI + publish intent) ----
+  // Runs whenever the element re-attaches (videoElVersion), so listeners are
+  // always bound to the CURRENT node — after every remount the element fires
+  // a 'pause' event, which must still reach this (now re-bound) handler.
   useEffect(() => {
+    void videoElVersion; // re-run on element re-attach
     const video = videoRef.current;
     if (!video) return;
     const isDirect = () => mediaKeyRef.current !== undefined && video.dataset.src !== undefined;
     const onTime = () => {
-      if (applyingRef.current) return;
       setCurrentTime(video.currentTime);
+      if (applyingRef.current) return;
       if (!video.paused && isDirect()) {
         publish(mediaKeyRef.current!, "direct", video.dataset.src, true, video.currentTime);
       }
@@ -511,13 +576,15 @@ export function useMediaSync({
       if (isDirect() && Number.isFinite(video.duration)) setDuration(video.duration);
     };
     const onPlay = () => {
-      if (applyingRef.current || !isDirect()) return;
+      // UI truth first — the button must always reflect the element, even
+      // while a remote apply is in flight (otherwise it visually snaps back).
       setPlaying(true);
+      if (applyingRef.current || !isDirect()) return;
       publish(mediaKeyRef.current!, "direct", video.dataset.src, true, video.currentTime, true);
     };
     const onPause = () => {
-      if (applyingRef.current || !isDirect()) return;
       setPlaying(false);
+      if (applyingRef.current || !isDirect()) return;
       publish(mediaKeyRef.current!, "direct", video.dataset.src, false, video.currentTime, true);
     };
     const onEnded = () => {
@@ -551,7 +618,7 @@ export function useMediaSync({
       video.removeEventListener("playing", onPlaying);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publish]);
+  }, [publish, videoElVersion]);
 
   // ---- YouTube progress ticker (publish controller position) ----
   useEffect(() => {
@@ -580,6 +647,10 @@ export function useMediaSync({
     if (mediaType === "direct") {
       const video = videoRef.current;
       if (video?.dataset.src) {
+        if (video.ended) {
+          // Replay from the start (element is stuck at the last frame, paused).
+          video.currentTime = 0;
+        }
         playWithAutoplayGuard(video);
       } else if (mediaKeyRef.current) {
         // Stage not mounted (mobile tab switch): record the play intent —
@@ -593,7 +664,13 @@ export function useMediaSync({
       // Player still warming up: publish the intent so playback starts the
       // moment onReady fires (the apply effect listens on ytReady).
       if (state?.currentVideoId) {
-        publish(state.currentVideoId, "youtube", undefined, true, player?.getCurrentTime?.() ?? state.positionSec, true);
+        let pos = state.positionSec;
+        try {
+          pos = player?.getCurrentTime?.() ?? pos;
+        } catch {
+          /* not ready yet — fall back to the last synced position */
+        }
+        publish(state.currentVideoId, "youtube", undefined, true, pos, true);
       }
       return;
     }
@@ -605,7 +682,7 @@ export function useMediaSync({
     if (mediaType === "direct") {
       const video = videoRef.current;
       video?.pause();
-      if (mediaKeyRef.current && !video?.dataset.src) {
+      if (mediaKeyRef.current && (!video || !video.dataset.src)) {
         publish(mediaKeyRef.current, "direct", state?.mediaUrl, false, video?.currentTime ?? state?.positionSec ?? 0, true);
       }
       return;
@@ -613,7 +690,13 @@ export function useMediaSync({
     const player = playerRef.current;
     if (!player || !ytReadyRef.current) {
       if (state?.currentVideoId) {
-        publish(state.currentVideoId, "youtube", undefined, false, player?.getCurrentTime?.() ?? state.positionSec, true);
+        let pos = state.positionSec;
+        try {
+          pos = player?.getCurrentTime?.() ?? pos;
+        } catch {
+          /* not ready yet — fall back to the last synced position */
+        }
+        publish(state.currentVideoId, "youtube", undefined, false, pos, true);
       }
       return;
     }
@@ -695,12 +778,15 @@ export function useMediaSync({
 
   return {
     ytHostRef,
+    /** Callback ref for the direct <video> — re-binds listeners on remount. */
+    videoElementRef,
     mediaType,
     ready: mediaType === "youtube" ? ytReady : mediaType === "direct",
     playing,
     currentTime,
     duration,
     buffering,
+    error: mediaType === "youtube" ? error : null,
     volume,
     muted,
     hasVideo: Boolean(state?.currentVideoId),

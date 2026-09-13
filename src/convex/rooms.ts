@@ -324,6 +324,7 @@ export const getMedia = query({
       positionSec: room.positionSec,
       mediaUpdatedAt: room.mediaUpdatedAt,
       mediaUpdatedBy: room.mediaUpdatedBy,
+      mediaSeq: room.mediaSeq ?? 0,
     };
   },
 });
@@ -337,11 +338,28 @@ export const setMedia = mutation({
     isPlaying: v.boolean(),
     positionSec: v.number(),
     sessionId: v.string(),
+    /** User-intent write (play/pause/seek) — must never be dropped. */
+    force: v.optional(v.boolean()),
+    /** Sender's last-seen mediaSeq — used to drop out-of-order ticks. */
+    baseMediaSeq: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireUser(ctx);
     const room = await ctx.db.get(args.roomId);
     if (!room) throw new Error("Oda bulunamadı.");
+    // Drop STALE background ticks that were snapshotted before a NEWER
+    // play/pause intent (or tick) was accepted — otherwise they overwrite it
+    // and the button looks broken (play snaps back to pause). Compared via
+    // the monotonic mediaSeq, so client/server clock skew is irrelevant.
+    // Intent writes (force) are always applied.
+    if (
+      !args.force &&
+      room.currentVideoId === args.videoId &&
+      args.baseMediaSeq !== undefined &&
+      args.baseMediaSeq < (room.mediaSeq ?? 0)
+    ) {
+      return; // stale tick — a newer intent (or tick) already superseded it
+    }
     await ctx.db.patch(args.roomId, {
       currentVideoId: args.videoId,
       mediaType: args.mediaType ?? "youtube",
@@ -350,6 +368,8 @@ export const setMedia = mutation({
       positionSec: Math.max(0, args.positionSec),
       mediaUpdatedAt: Date.now(),
       mediaUpdatedBy: args.sessionId,
+      // Bump the monotonic op counter on every accepted write.
+      mediaSeq: (room.mediaSeq ?? 0) + 1,
     });
   },
 });

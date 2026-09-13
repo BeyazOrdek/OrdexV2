@@ -447,14 +447,18 @@
    edges + a gentle color pop for low-resolution sources.
    ============================================================ */
 .ordex-hdboost {
-  image-rendering: crisp-edges;
-  filter: contrast(1.05) saturate(1.1) brightness(1.02);
-}
-
-@supports (image-rendering: pixelated) {
-  .ordex-hdboost {
-    image-rendering: pixelated;
-  }
+  /* "4K" boost: real sharpening via a light unsharp mask (SVG #ordex-unsharp,
+     defined next to the room stage) + mild color pop. The previous
+     implementation used `image-rendering: pixelated`, which MAGNIFIES every
+     block of the already-upscaled video: hard black grid lines, chunky
+     pixels and flicker. A gentle convolution sharpen reads as "HD" without
+     amplifying compression artifacts. */
+  filter:
+    url("#ordex-unsharp")
+    contrast(1.06)
+    saturate(1.08)
+    brightness(1.02);
+  will-change: filter;
 }
 
 /* ============================================================
