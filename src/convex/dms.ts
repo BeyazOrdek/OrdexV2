@@ -187,6 +187,55 @@ export const editDm = mutation({
   },
 });
 
+// ================= 📌 Pinned DMs =================
+
+/** Pin/unpin a DM (either participant may toggle). */
+export const toggleDmPin = mutation({
+  args: { messageId: v.id("dms") },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || (msg.senderId !== me && msg.recipientId !== me)) {
+      throw new Error("Bu mesajı sabitleyemezsin.");
+    }
+    await ctx.db.patch(args.messageId, {
+      pinned: !msg.pinned,
+      pinnedByUserId: !msg.pinned ? me : undefined,
+    });
+  },
+});
+
+/** All pinned DMs in my conversation with a peer (banner order: oldest → newest). */
+export const listPinnedDms = query({
+  args: { otherUserId: v.id("users") },
+  handler: async (ctx, args) => {
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
+    const sent = await ctx.db
+      .query("dms")
+      .withIndex("by_pair", (q) => q.eq("senderId", me).eq("recipientId", args.otherUserId))
+      .collect();
+    const received = await ctx.db
+      .query("dms")
+      .withIndex("by_pair", (q) => q.eq("senderId", args.otherUserId).eq("recipientId", me))
+      .collect();
+    const pinned = [...sent, ...received].filter((d) => d.pinned).sort((a, b) => a.createdAt - b.createdAt);
+    return await Promise.all(
+      pinned.map(async (d) => {
+        const pinner = d.pinnedByUserId ? await ctx.db.get(d.pinnedByUserId) : null;
+        return {
+          _id: d._id,
+          userName: d.senderName ?? "Bilinmeyen",
+          text: d.text,
+          gifThumb: d.gifThumb,
+          createdAt: d.createdAt,
+          pinnedByName: pinner?.name ?? "Bilinmeyen",
+        };
+      }),
+    );
+  },
+});
+
 /** Delete one of my own DMs. */
 export const deleteDm = mutation({
   args: { messageId: v.id("dms") },
@@ -793,6 +842,53 @@ export const markGroupRead = mutation({
       changed++;
     }
     return { changed };
+  },
+});
+
+// ================= 📌 Pinned group messages =================
+
+/** Pin/unpin a group message (any member may toggle). */
+export const toggleGroupPin = mutation({
+  args: { messageId: v.id("groupMessages") },
+  handler: async (ctx, args) => {
+    const me = await requireUser(ctx);
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg || !(await isMember(ctx, msg.groupId, me))) {
+      throw new Error("Bu mesajı sabitleyemezsin.");
+    }
+    await ctx.db.patch(args.messageId, {
+      pinned: !msg.pinned,
+      pinnedByUserId: !msg.pinned ? me : undefined,
+    });
+  },
+});
+
+/** All pinned messages of a group (banner order: oldest → newest). */
+export const listPinnedGroupMessages = query({
+  args: { groupId: v.id("groups") },
+  handler: async (ctx, args) => {
+    const me = await currentUserId(ctx);
+    if (me === null) return [];
+    if (!(await isMember(ctx, args.groupId, me))) return [];
+    const rows = await ctx.db
+      .query("groupMessages")
+      .withIndex("by_group", (q) => q.eq("groupId", args.groupId))
+      .order("desc")
+      .take(200);
+    const pinned = rows.filter((m) => m.pinned).reverse();
+    return await Promise.all(
+      pinned.map(async (m) => {
+        const pinner = m.pinnedByUserId ? await ctx.db.get(m.pinnedByUserId) : null;
+        return {
+          _id: m._id,
+          userName: m.userName,
+          text: m.text,
+          gifThumb: m.gifThumb,
+          createdAt: m.createdAt,
+          pinnedByName: pinner?.name ?? "Bilinmeyen",
+        };
+      }),
+    );
   },
 });
 

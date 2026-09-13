@@ -124,15 +124,17 @@ export const listUsersPresence = query({
           .query("presence")
           .withIndex("by_user", (q) => q.eq("userId", userId))
           .collect(),
+        afk: (await ctx.db.get(userId))?.presenceStatus === "afk",
       })),
     );
-    return rows.map(({ userId, sessions }) => {
+    return rows.map(({ userId, sessions, afk }) => {
       const fresh = sessions.filter((s) => now - s.lastSeen < FRESH_MS);
       return {
         userId,
         online: fresh.length > 0,
         inVoice: fresh.some((s) => s.inVoice),
         isSharing: fresh.some((s) => s.isSharing === true),
+        afk,
       };
     });
   },

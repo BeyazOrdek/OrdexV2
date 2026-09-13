@@ -141,6 +141,24 @@ export const ensureUsername = mutation({
   },
 });
 
+// ================= 😴 Auto-AFK presence =================
+
+/**
+ * Set the signed-in user's auto presence: "afk" after 5 idle minutes,
+ * "online" on any input. Written by useAutoAfk on every transition only
+ * (not per heartbeat), so the write volume stays negligible.
+ */
+export const setPresenceStatus = mutation({
+  args: { status: v.union(v.literal("online"), v.literal("afk")) },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return;
+    const user = await ctx.db.get(userId);
+    if (!user || user.presenceStatus === args.status) return; // no-op guard
+    await ctx.db.patch(userId, { presenceStatus: args.status });
+  },
+});
+
 /** Search users by name (substring match, min 2 chars) for the add-friend flow. */
 export const searchUsers = query({
   args: { name: v.string() },

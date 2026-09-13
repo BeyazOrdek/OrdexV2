@@ -47,6 +47,7 @@ import {
 import { badgeMeta } from "@/lib/profile";
 import { readImageFile } from "@/lib/profile";
 import { Lightbox } from "@/components/Lightbox";
+import { Pin, PinOff, Search as SearchIcon2 } from "lucide-react";
 
 // ---------- shared tiny bits ----------
 
@@ -211,17 +212,21 @@ function TypingRow({ names }: { names: string[] }) {
   );
 }
 
-/** Shared message action bar (reply / edit / delete) shown on hover. */
+/** Shared message action bar (reply / pin / edit / delete) shown on hover. */
 function MessageActions({
   mine,
   onReply,
   onEdit,
   onDelete,
+  pinned,
+  onTogglePin,
 }: {
   mine: boolean;
   onReply: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   return (
     <div className="absolute -top-2 right-1 hidden items-center gap-0.5 rounded-full border border-white/10 bg-[var(--ordex-panel-3)] px-1 py-0.5 shadow-lg group-hover:flex">
@@ -232,6 +237,18 @@ function MessageActions({
       >
         <Reply className="size-3" />
       </button>
+      {onTogglePin && (
+        <button
+          onClick={onTogglePin}
+          className={cn(
+            "rounded p-1 hover:bg-white/10",
+            pinned ? "text-amber-400" : "text-zinc-400 hover:text-amber-400",
+          )}
+          title={pinned ? "Sabitlemeyi kaldır" : "Mesajı sabitle"}
+        >
+          {pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}
+        </button>
+      )}
       {mine && onEdit && (
         <button
           onClick={onEdit}
@@ -250,6 +267,107 @@ function MessageActions({
           <Trash2 className="size-3" />
         </button>
       )}
+    </div>
+  );
+}
+
+/** 🔍 Renders message text with every query match highlighted in yellow. */
+function HighlightText({ text, query, selfName }: { text: string; query: string; selfName?: string }) {
+  const highlighted = useMemo(() => {
+    if (query.length < 2) return null;
+    const lower = text.toLowerCase();
+    const idx = lower.indexOf(query);
+    return idx === -1
+      ? null
+      : { before: text.slice(0, idx), hit: text.slice(idx, idx + query.length), after: text.slice(idx + query.length) };
+  }, [text, query]);
+  if (!highlighted) return <MentionText text={text} selfName={selfName} />;
+  return (
+    <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-300">
+      {highlighted.before}
+      <mark className="ordex-search-hit">{highlighted.hit}</mark>
+      {highlighted.after}
+    </p>
+  );
+}
+
+/** 📌 Shared pinned-message band (DM + group chat views). */
+function PinnedBand({
+  items,
+  onJump,
+  onUnpin,
+}: {
+  items: { _id: string; userName: string; text?: string; gifThumb?: string; pinnedByName: string }[];
+  onJump: (id: string) => void;
+  onUnpin: (id: string) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="ordex-inset max-h-24 space-y-1 overflow-y-auto border-b border-white/5 px-2.5 py-1.5 [scrollbar-width:thin]">
+      {items.map((p) => (
+        <div key={p._id} className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left transition-colors hover:bg-white/5"
+            title="Mesaja git"
+            onClick={() => onJump(p._id)}
+          >
+            <Pin className="size-3 shrink-0 text-amber-400" />
+            <span className="shrink-0 text-[10px] font-semibold text-zinc-300">{p.userName}</span>
+            <span className="min-w-0 truncate text-[10px] text-zinc-500">{p.text ?? "medya"}</span>
+            <span className="shrink-0 text-[9px] text-zinc-600">· {p.pinnedByName} sabitledi</span>
+          </button>
+          <button
+            type="button"
+            className="shrink-0 rounded p-0.5 text-zinc-600 hover:bg-white/10 hover:text-red-400"
+            title="Sabitlemeyi kaldır"
+            onClick={() => onUnpin(p._id)}
+          >
+            <PinOff className="size-3" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 🔍 Shared search bar row (DM + group chat views). */
+function SearchBar({
+  open,
+  query,
+  resultCount,
+  onQuery,
+  onClose,
+}: {
+  open: boolean;
+  query: string;
+  resultCount: number;
+  onQuery: (v: string) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="ordex-inset flex items-center gap-2 border-b border-white/5 px-2.5 py-2">
+      <SearchIcon2 className="size-3.5 shrink-0 text-zinc-500" />
+      <input
+        autoFocus
+        value={query}
+        onChange={(e) => onQuery(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && onClose()}
+        placeholder="Mesajlarda ara..."
+        className="h-7 min-w-0 flex-1 bg-transparent text-xs text-zinc-100 outline-none placeholder:text-zinc-500"
+      />
+      {query.trim().length >= 2 && (
+        <span className="shrink-0 text-[10px] text-zinc-500">{resultCount} sonuç</span>
+      )}
+      <button
+        type="button"
+        className="rounded p-0.5 text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
+        title="Aramayı kapat (ESC)"
+        onClick={onClose}
+      >
+        <X className="size-3.5" />
+      </button>
     </div>
   );
 }
@@ -442,6 +560,9 @@ function DmView({
   const deleteDm = useMutation(api.dms.deleteDm);
   const setTyping = useMutation(api.dms.setTyping);
   const clearTyping = useMutation(api.dms.clearTyping);
+  // 📌 Pin system + 🔍 search state.
+  const pinned = useQuery(api.dms.listPinnedDms, { otherUserId: peer._id as never }) ?? [];
+  const togglePin = useMutation(api.dms.toggleDmPin);
   const searchGifs = useActionSafe();
   const callState = useCallState();
 
@@ -454,6 +575,25 @@ function DmView({
   const [lightbox, setLightbox] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // 🔍 Chat search: filter + highlight matched messages.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (m: (typeof messages)[number]) =>
+    q.length >= 2 &&
+    ((m.text ?? "").toLowerCase().includes(q) || (m.senderName ?? peer.name).toLowerCase().includes(q));
+  const visibleMessages = q.length >= 2 ? messages.filter(matchesQuery) : messages;
+  // Jump out of search results to the full history position of a pinned msg.
+  const focusMessage = (messageId: string) => {
+    setQuery("");
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`dm-msg-${messageId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.classList.add("ordex-search-active");
+      window.setTimeout(() => el?.classList.remove("ordex-search-active"), 1600);
+    });
+  };
 
   // Live typing indicator (peer) + broadcast mine. TYPING_TTL on the server
   // makes stale rows vanish even if a tab crashes mid-keystroke.
@@ -572,6 +712,21 @@ function DmView({
         </div>
         <Button
           size="icon"
+          variant="ghost"
+          className={cn(
+            "size-7",
+            searchOpen ? "bg-white/10 text-zinc-100" : "text-zinc-400 hover:bg-white/10 hover:text-zinc-100",
+          )}
+          title="Mesajlarda ara"
+          onClick={() => {
+            setSearchOpen((v) => !v);
+            setQuery("");
+          }}
+        >
+          <Search className="size-4" />
+        </Button>
+        <Button
+          size="icon"
           className="size-8 shrink-0 bg-emerald-600 text-white hover:bg-emerald-500"
           title={`${peer.name} kişisini ara`}
           onClick={() => onCall(peer)}
@@ -580,12 +735,34 @@ function DmView({
         </Button>
       </div>
 
+      {/* 🔍 Search bar */}
+      <SearchBar
+        open={searchOpen}
+        query={query}
+        resultCount={visibleMessages.length}
+        onQuery={setQuery}
+        onClose={() => {
+          setSearchOpen(false);
+          setQuery("");
+        }}
+      />
+
+      {/* 📌 Pinned messages band */}
+      <PinnedBand items={pinned} onJump={focusMessage} onUnpin={(id) => void togglePin({ messageId: id as never }).catch(() => undefined)} />
+
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
-        {messages.length === 0 && (
+        {visibleMessages.length === 0 && q.length >= 2 && (
+          <p className="py-6 text-center text-xs text-zinc-600">Eşleşen mesaj bulunamadı.</p>
+        )}
+        {visibleMessages.length === 0 && q.length < 2 && (
           <p className="py-6 text-center text-xs text-zinc-600">{peer.name} ile sohbetin burada başlar.</p>
         )}
-        {messages.map((m) => (
-          <div key={m._id} className={cn("group relative flex flex-col", m.mine ? "items-end" : "items-start")}>
+        {visibleMessages.map((m) => (
+          <div
+            key={m._id}
+            id={`dm-msg-${m._id}`}
+            className={cn("group relative flex scroll-mt-2 flex-col", m.mine ? "items-end" : "items-start")}
+          >
             {m.replyTo && <ReplyPreview userName={m.replyTo.userName} text={m.replyTo.text} />}
             <div
               className={cn(
@@ -593,7 +770,7 @@ function DmView({
                 m.mine ? "bg-[var(--ordex-accent-soft)] text-[var(--ordex-text)]" : "ordex-inset text-zinc-300",
               )}
             >
-              {m.text && <MentionText text={m.text} selfName={user?.name ?? undefined} />}
+              {m.text && <HighlightText text={m.text} query={q} selfName={user?.name ?? undefined} />}
               {m.gifUrl && (
                 <img
                   src={m.gifThumb ?? m.gifUrl}
@@ -605,6 +782,11 @@ function DmView({
               )}
             </div>
             <span className="mt-0.5 flex items-center gap-1.5 px-1 text-[9px] text-zinc-600">
+              {m.pinned && (
+                <span className="inline-flex shrink-0" title="Sabitlenmiş">
+                  <Pin className="size-2.5 shrink-0 text-amber-400" />
+                </span>
+              )}
               {formatStamp(m.createdAt)}
               {m.editedAt !== undefined && <span className="italic">(düzenlendi)</span>}
               {m.mine && <ReadTicks read={m.read === true} />}
@@ -614,6 +796,8 @@ function DmView({
               onReply={() => setReplyTo({ _id: m._id, userName: m.senderName ?? peer.name, text: m.text })}
               onEdit={() => setEditing({ _id: m._id, text: m.text ?? "" })}
               onDelete={() => void deleteDm({ messageId: m._id as never }).catch(() => undefined)}
+              pinned={m.pinned === true}
+              onTogglePin={() => void togglePin({ messageId: m._id as never }).catch(() => undefined)}
             />
           </div>
         ))}
@@ -774,6 +958,9 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
   const leaveGroup = useMutation(api.dms.leaveGroup);
   const setTyping = useMutation(api.dms.setTyping);
   const clearTyping = useMutation(api.dms.clearTyping);
+  // 📌 Pin system + 🔍 search state.
+  const pinned = useQuery(api.dms.listPinnedGroupMessages, { groupId }) ?? [];
+  const togglePin = useMutation(api.dms.toggleGroupPin);
   const searchGifs = useActionSafe();
 
   const [text, setText] = useState("");
@@ -787,6 +974,24 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
   const [lightbox, setLightbox] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // 🔍 Group chat search: filter + highlight matched messages.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (m: (typeof messages)[number]) =>
+    q.length >= 2 &&
+    ((m.text ?? "").toLowerCase().includes(q) || (m.userName ?? "").toLowerCase().includes(q));
+  const visibleMessages = q.length >= 2 ? messages.filter(matchesQuery) : messages;
+  const focusMessage = (messageId: string) => {
+    setQuery("");
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`group-msg-${messageId}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      el?.classList.add("ordex-search-active");
+      window.setTimeout(() => el?.classList.remove("ordex-search-active"), 1600);
+    });
+  };
 
   // Typing: same ephemeral pattern as DMs, scoped to the group id.
   const typing = useQuery(api.dms.listTyping, { scope: "group", targetId: groupId });
@@ -910,18 +1115,35 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
           </div>
         )}
         {!renaming && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-7 text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
-            title="Grup adını değiştir"
-            onClick={() => {
-              setNameDraft(group.name);
-              setRenaming(true);
-            }}
-          >
-            <Pencil className="size-3.5" />
-          </Button>
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              className={cn(
+                "size-7",
+                searchOpen ? "bg-white/10 text-zinc-100" : "text-zinc-500 hover:bg-white/10 hover:text-zinc-200",
+              )}
+              title="Mesajlarda ara"
+              onClick={() => {
+                setSearchOpen((v) => !v);
+                setQuery("");
+              }}
+            >
+              <Search className="size-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
+              title="Grup adını değiştir"
+              onClick={() => {
+                setNameDraft(group.name);
+                setRenaming(true);
+              }}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+          </>
         )}
         <Button
           size="icon"
@@ -937,10 +1159,34 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
         </Button>
       </div>
 
+      {/* 🔍 Search bar */}
+      <SearchBar
+        open={searchOpen}
+        query={query}
+        resultCount={visibleMessages.length}
+        onQuery={setQuery}
+        onClose={() => {
+          setSearchOpen(false);
+          setQuery("");
+        }}
+      />
+
+      {/* 📌 Pinned messages band */}
+      <PinnedBand items={pinned} onJump={focusMessage} onUnpin={(id) => void togglePin({ messageId: id as never }).catch(() => undefined)} />
+
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3 [scrollbar-width:thin]">
-        {messages.length === 0 && <p className="py-6 text-center text-xs text-zinc-600">Grup sohbeti burada başlar.</p>}
-        {messages.map((m) => (
-          <div key={m._id} className={cn("group relative flex flex-col", m.mine ? "items-end" : "items-start")}>
+        {visibleMessages.length === 0 && q.length >= 2 && (
+          <p className="py-6 text-center text-xs text-zinc-600">Eşleşen mesaj bulunamadı.</p>
+        )}
+        {visibleMessages.length === 0 && q.length < 2 && (
+          <p className="py-6 text-center text-xs text-zinc-600">Grup sohbeti burada başlar.</p>
+        )}
+        {visibleMessages.map((m) => (
+          <div
+            key={m._id}
+            id={`group-msg-${m._id}`}
+            className={cn("group relative flex scroll-mt-2 flex-col", m.mine ? "items-end" : "items-start")}
+          >
             {m.replyTo && <ReplyPreview userName={m.replyTo.userName} text={m.replyTo.text} />}
             {!m.mine && (
               <Popover>
@@ -960,7 +1206,7 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
                 m.mine ? "bg-[var(--ordex-accent-soft)] text-[var(--ordex-text)]" : "ordex-inset text-zinc-300",
               )}
             >
-              {m.text && <MentionText text={m.text} selfName={user?.name ?? undefined} />}
+              {m.text && <HighlightText text={m.text} query={q} selfName={user?.name ?? undefined} />}
               {m.gifUrl && (
                 <img
                   src={m.gifThumb ?? m.gifUrl}
@@ -972,6 +1218,11 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
               )}
             </div>
             <span className="mt-0.5 flex items-center gap-1.5 px-1 text-[9px] text-zinc-600">
+              {m.pinned && (
+                <span className="inline-flex shrink-0" title="Sabitlenmiş">
+                  <Pin className="size-2.5 shrink-0 text-amber-400" />
+                </span>
+              )}
               {formatStamp(m.createdAt)}
               {m.editedAt !== undefined && <span className="italic">(düzenlendi)</span>}
               {m.mine && <ReadTicks read={m.readByAll === true} />}
@@ -981,6 +1232,8 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
               onReply={() => setReplyTo({ _id: m._id, userName: m.userName, text: m.text })}
               onEdit={() => setEditing({ _id: m._id, text: m.text ?? "" })}
               onDelete={() => void deleteMsg({ messageId: m._id as never }).catch(() => undefined)}
+              pinned={m.pinned === true}
+              onTogglePin={() => void togglePin({ messageId: m._id as never }).catch(() => undefined)}
             />
           </div>
         ))}

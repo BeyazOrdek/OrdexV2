@@ -92,3 +92,49 @@ export const listReactions = query({
     return all;
   },
 });
+
+// ================= 📌 Pinned messages (room) =================
+
+/** Pin/unpin a room message. Any signed-in member may toggle the pin. */
+export const toggleRoomPin = mutation({
+  args: { messageId: v.id("messages") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) throw new Error("Giriş yapmalısın.");
+    const msg = await ctx.db.get(args.messageId);
+    if (!msg) return;
+    await ctx.db.patch(args.messageId, {
+      pinned: !msg.pinned,
+      pinnedByUserId: !msg.pinned ? userId : undefined,
+    });
+  },
+});
+
+/** All pinned messages of a room (banner order: oldest → newest). */
+export const listPinnedRoomMessages = query({
+  args: { roomId: v.id("rooms") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return [];
+    const rows = await ctx.db
+      .query("messages")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+      .order("desc")
+      .take(200);
+    const pinned = rows.filter((m) => m.pinned);
+    const byIds = await Promise.all(
+      pinned.map(async (m) => {
+        const pinner = m.pinnedByUserId ? await ctx.db.get(m.pinnedByUserId) : null;
+        return {
+          _id: m._id,
+          userName: m.userName,
+          text: m.text,
+          gifThumb: m.gifThumb,
+          createdAt: m.createdAt,
+          pinnedByName: pinner?.name ?? "Bilinmeyen",
+        };
+      }),
+    );
+    return byIds.reverse();
+  },
+});

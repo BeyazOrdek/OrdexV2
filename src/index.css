@@ -437,3 +437,21 @@
     image-rendering: pixelated;
   }
 }
+
+/* ============================================================
+   ÖRDEX chat search — highlight for matched message text and a
+   soft ring around matched message cards.
+   ============================================================ */
+.ordex-search-hit {
+  background-color: rgba(250, 204, 21, 0.28);
+  border-radius: 2px;
+  padding: 0 1px;
+  color: inherit;
+}
+
+.ordex-search-active {
+  box-shadow:
+    0 0 0 1.5px var(--ordex-accent),
+    0 0 12px var(--ordex-glow);
+  border-radius: 12px;
+}

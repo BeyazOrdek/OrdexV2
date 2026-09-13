@@ -31,6 +31,7 @@ import {
   useUnreadBadges,
 } from "@/components/social/SocialOverlay";
 import { ProfileBar } from "@/components/social/ProfileBar";
+import { useAutoAfk } from "@/hooks/use-auto-afk";
 
 /**
  * ÖRDEX home — a Discord-style standalone shell. Room management, DMs, groups
@@ -50,6 +51,8 @@ const FRIENDS_VIEWS: { id: FriendsView; label: string }[] = [
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  // 😴 Global auto-AFK watcher (5 dk hareketsizlik → Boşta 🌙).
+  useAutoAfk();
   const [tab, setTab] = useState<HomeTab>("rooms");
   const [friendsView, setFriendsView] = useState<FriendsView>("all");
   const [code, setCode] = useState("");

@@ -33,6 +33,8 @@ const schema = defineSchema(
 
       // ÖRDEX profile extensions
       statusMessage: v.optional(v.string()),
+      // 😴 auto-AFK presence: undefined/"online" | "afk" (drives the 🌙 dot)
+      presenceStatus: v.optional(v.union(v.literal("online"), v.literal("afk"))),
       avatarUrl: v.optional(v.string()), // custom avatar image or Tenor GIF url
       // Rich profile customization
       username: v.optional(v.string()), // unique lowercase handle (Guest_#### for guests)
@@ -84,6 +86,9 @@ const schema = defineSchema(
       gifThumb: v.optional(v.string()),
       // @mention targets resolved at send time (user ids)
       mentionedUserIds: v.optional(v.array(v.id("users"))),
+      // 📌 pinned message system (any member can pin/unpin)
+      pinned: v.optional(v.boolean()),
+      pinnedByUserId: v.optional(v.id("users")),
       createdAt: v.number(),
     }).index("by_room", ["roomId"]),
 
@@ -178,6 +183,9 @@ const schema = defineSchema(
       replyToId: v.optional(v.id("dms")),
       // "düzenlendi" tag timestamp (undefined = never edited).
       editedAt: v.optional(v.number()),
+      // 📌 pinned message system (either participant can pin/unpin).
+      pinned: v.optional(v.boolean()),
+      pinnedByUserId: v.optional(v.id("users")),
     })
       .index("by_pair", ["senderId", "recipientId"])
       .index("by_recipient", ["recipientId"]),
@@ -241,6 +249,9 @@ const schema = defineSchema(
       createdAt: v.number(),
       replyToId: v.optional(v.id("groupMessages")),
       editedAt: v.optional(v.number()),
+      // 📌 pinned message system (any member can pin/unpin).
+      pinned: v.optional(v.boolean()),
+      pinnedByUserId: v.optional(v.id("users")),
     }).index("by_group", ["groupId"]),
 
     // Typing indicators (ephemeral rows, TTL-swept by the writer).

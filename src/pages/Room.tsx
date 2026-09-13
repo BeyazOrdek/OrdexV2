@@ -24,6 +24,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useAutoAfk } from "@/hooks/use-auto-afk";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -136,6 +137,8 @@ function RoomView({
   userId: string;
 }) {
   const navigate = useNavigate();
+  // 😴 Global auto-AFK watcher (5 dk hareketsizlik → Boşta 🌙).
+  useAutoAfk();
   // Voice UI state mirrored up so presence heartbeats reflect it.
   const [voiceUi, setVoiceUi] = useState({ inVoice: false, micOn: true, camOn: true, isSharing: false });
 

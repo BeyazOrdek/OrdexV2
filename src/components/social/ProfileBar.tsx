@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
-import { Mic, MicOff, Pencil, Settings, Volume2, VolumeX } from "lucide-react";
+import { useAutoAfk } from "@/hooks/use-auto-afk";
+import { Mic, MicOff, Moon, Pencil, Settings, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   getCallControls,
@@ -20,6 +21,8 @@ export function ProfileBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const controls = getCallControls();
   const inCall = call.active && !call.ringing;
   const onCall = call.active;
+  // 😴 Mirrors the global auto-AFK watcher (5 dk idle → Boşta 🌙).
+  const { afk } = useAutoAfk();
 
   return (
     <div className="ordex-inset flex items-center gap-1 border-t border-white/5 px-2 py-2">
@@ -33,8 +36,17 @@ export function ProfileBar({ onOpenSettings }: { onOpenSettings: () => void }) {
         size={8}
       />
       <span className="relative -ml-2 mr-0.5 shrink-0">
-        {/* Presence dot: green = online */}
-        <span className="block size-3 rounded-full border-2 border-[var(--ordex-panel-2)] bg-emerald-500" />
+        {/* Presence dot: green = online, amber moon = auto-AFK */}
+        {afk ? (
+          <span
+            className="flex size-3 items-center justify-center rounded-full border-2 border-[var(--ordex-panel-2)] bg-amber-500"
+            title="Boşta (otomatik)"
+          >
+            <Moon className="size-1.5 text-white" />
+          </span>
+        ) : (
+          <span className="block size-3 rounded-full border-2 border-[var(--ordex-panel-2)] bg-emerald-500" />
+        )}
       </span>
 
       <button
@@ -52,6 +64,8 @@ export function ProfileBar({ onOpenSettings }: { onOpenSettings: () => void }) {
               <span className="font-medium text-emerald-400">Ses Bağlantısı Kuruldu</span>
             ) : onCall ? (
               <span className="font-medium text-emerald-400">Aramada — {call.peerName}</span>
+            ) : afk ? (
+              <span className="font-medium text-amber-400">Boşta 🌙</span>
             ) : (
               <span className="text-[var(--ordex-muted)]">
                 {user?.statusMessage || "Çevrimiçi"}

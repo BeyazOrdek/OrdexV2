@@ -6,6 +6,7 @@ import {
   CircleDot,
   Loader2,
   MessageSquare,
+  Moon,
   Phone,
   Plus,
   Search,
@@ -51,11 +52,13 @@ function UserAvatar({
   size = 8,
   online,
   sharing,
+  afk,
 }: {
   user: PublicUserLite;
   size?: number;
   online?: boolean;
   sharing?: boolean;
+  afk?: boolean;
 }) {
   const px = { width: `${size * 4}px`, height: `${size * 4}px` };
   return (
@@ -75,16 +78,18 @@ function UserAvatar({
           {initials(user.name)}
         </span>
       )}
-      {/* Online / offline presence dot */}
+      {/* Online / AFK 🌙 / offline presence dot */}
       {online !== undefined && (
         <span
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 rounded-full border-2 border-[var(--ordex-panel-2)]",
-            online ? "bg-emerald-400" : "bg-zinc-600",
+            "absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full border-2 border-[var(--ordex-panel-2)]",
+            afk && online ? "bg-amber-500" : online ? "bg-emerald-400" : "bg-zinc-600",
           )}
           style={{ width: `${Math.max(7, size * 1.5)}px`, height: `${Math.max(7, size * 1.5)}px` }}
-          title={online ? "Çevrimiçi" : "Çevrimdışı"}
-        />
+          title={afk && online ? "Boşta 🌙" : online ? "Çevrimiçi" : "Çevrimdışı"}
+        >
+          {afk && online && <Moon className="size-1.5 text-white" />}
+        </span>
       )}
       {sharing && (
         <span
@@ -125,6 +130,7 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
   );
   const isOnline = (userId: string) => onlineMap.get(String(userId))?.online ?? false;
   const isSharing = (userId: string) => onlineMap.get(String(userId))?.isSharing ?? false;
+  const isAfk = (userId: string) => onlineMap.get(String(userId))?.afk ?? false;
 
   const groups = useQuery(api.dms.listMyGroups, {}) ?? [];
   const badges = useUnreadBadges();
@@ -163,7 +169,10 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
   // chat stage on the home page. The phone button always voice-calls.
   const openDm = (u: PublicUserLite) => openSocialView({ kind: "dm", peer: u });
 
-  const onlineFriends = useMemo(() => friends.filter((f) => isOnline(f._id)), [friends, onlineMap]);
+  const onlineFriends = useMemo(
+    () => friends.filter((f) => isOnline(f._id) && !isAfk(f._id)),
+    [friends, onlineMap],
+  );
 
   const showSearch = view === "add" || view === "all";
   const showDmContacts = (view === "all" || view === "online") && dmContacts.length > 0;
@@ -208,7 +217,7 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
                     key={u._id}
                     className="ordex-inset flex items-center gap-2 rounded-md px-2 py-1.5"
                   >
-                    <UserAvatar user={u} size={7} />
+                    <UserAvatar user={u} size={7} online afk={isAfk(u._id)} />
                     <span className="min-w-0 flex-1 truncate text-xs text-zinc-100">
                       {u.name}
                     </span>
@@ -320,7 +329,7 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
             </p>
             {incoming.map((u) => (
               <div key={u._id} className="ordex-inset mb-1 flex items-center gap-2 rounded-md px-2 py-1.5">
-                <UserAvatar user={u} />
+                <UserAvatar user={u} afk={isAfk(u._id)} />
                 <span className="min-w-0 flex-1 truncate text-xs text-zinc-100">{u.name}</span>
                 <Button
                   size="icon"
@@ -394,6 +403,9 @@ export function FriendsPanel({ view = "all" }: { view?: FriendsView }) {
             {(view === "online" ? onlineFriends : friends).map((u) => (
               <div key={u._id} className="ordex-inset group mb-1 flex items-center gap-2 rounded-md px-2 py-1.5">
                 <ProfileAvatar user={u} size={8} />
+                {isOnline(u._id) && isAfk(u._id) && (
+                  <span className="shrink-0 text-[10px] text-amber-400" title="Boşta (otomatik)">🌙</span>
+                )}
                 <span className="min-w-0 flex-1">
                   <span
                     className="block truncate text-xs font-medium"
