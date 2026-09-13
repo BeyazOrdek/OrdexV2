@@ -30,10 +30,15 @@ export function useRoomPresence({
 }: PresenceOptions) {
   const heartbeat = useMutation(api.presence.heartbeat);
   const presenceRows = useQuery(api.presence.listPresence, { roomId });
+  // 🚪 Reactive kick lookup — flips the client to the kicked screen instantly
+  // (the heartbeat guard is the backup for missed reactive updates).
+  const kickedRow = useQuery(api.rooms.getMyKick, { roomId, sessionId });
 
   // Set when the backend reports the room was auto-deleted (everyone left),
   // or the local session left — Room.tsx shows a "room closed" screen.
   const [roomClosed, setRoomClosed] = useState(false);
+  // 🚪 Set when the owner removes this user from the room.
+  const [kicked, setKicked] = useState(false);
 
   const infoRef = useRef({ sessionId, userName, avatarHue });
   const voiceRef = useRef({ inVoice, micOn, camOn, isSharing });
@@ -64,6 +69,7 @@ export function useRoomPresence({
         isSharing: v.isSharing,
       }).catch((err) => {
         if (String(err).includes("ROOM_CLOSED")) setRoomClosed(true);
+        if (String(err).includes("ROOM_KICKED")) setKicked(true);
       });
     };
     beat();
@@ -109,5 +115,6 @@ export function useRoomPresence({
   );
   const voiceSessions = participants.filter((row) => row.inVoice);
 
-  return { participants, voiceSessions, roomClosed };
+  const isKicked = kicked || Boolean(kickedRow);
+  return { participants, voiceSessions, roomClosed, kicked: isKicked };
 }

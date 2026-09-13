@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import {
   Hash,
   Lock,
+  LogOut,
   MessageSquare,
   Plus,
   UserPlus,
@@ -13,6 +14,11 @@ import { useNavigate } from "react-router";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { CreateRoomModal } from "@/components/CreateRoomModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { CountBadge, useUnreadBadges } from "@/components/social/SocialOverlay";
@@ -38,7 +44,7 @@ const FRIENDS_VIEWS: { id: FriendsView; label: string; icon?: typeof UserPlus }[
   { id: "add", label: "Arkadaş Ekle", icon: UserPlus },
 ];
 
-export function LeftPanel({ activeCode }: { activeCode?: string }) {
+export function LeftPanel({ activeCode, onLeaveRoom }: { activeCode?: string; onLeaveRoom?: () => void }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("rooms");
   const [friendsView, setFriendsView] = useState<FriendsView>("all");
@@ -119,6 +125,28 @@ export function LeftPanel({ activeCode }: { activeCode?: string }) {
             )}
           </button>
         </div>
+
+        {/* Room header row: active room chip + small red leave icon (Discord-style,
+            lives in the LEFT PANEL nav — never over the chat area). */}
+        {activeCode && onLeaveRoom && (
+          <div className="ordex-inset mt-1.5 flex items-center gap-1.5 rounded-md p-1 pl-2">
+            <span className="ordex-chip min-w-0 flex-1 truncate rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px] tracking-wider text-zinc-300">
+              #{activeCode}
+            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onLeaveRoom}
+                  title="Odadan çık — ana sayfaya dön"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md border border-red-500/30 bg-red-500/10 text-red-400 transition-colors hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-300"
+                >
+                  <LogOut className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Odadan çık</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
 
         {/* Friends sub-navigation (Çevrimiçi / Tümü / Bekleyenler / Arkadaş Ekle) */}
         {tab === "friends" && (

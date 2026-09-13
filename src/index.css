@@ -337,6 +337,25 @@
   }
 }
 
+/* 💬 ||spoiler|| — blurred until clicked (Discord-style) */
+.ordex-spoiler {
+  background: var(--ordex-inset);
+  color: transparent;
+  border-radius: 3px;
+  padding: 0 3px;
+  cursor: pointer;
+  user-select: none;
+  text-shadow: 0 0 7px rgba(255, 255, 255, 0.65);
+  transition: text-shadow 0.2s, color 0.2s;
+}
+.ordex-spoiler-open {
+  color: inherit;
+  text-shadow: none;
+  user-select: auto;
+  cursor: auto;
+  background: color-mix(in srgb, var(--ordex-inset) 70%, var(--ordex-accent) 8%);
+}
+
 /* ============================================================
    ÖRDEX call overlay animations — Discord-style green speaking ring
    and curved sound-wave pulse, plus the typing dots. All pure CSS

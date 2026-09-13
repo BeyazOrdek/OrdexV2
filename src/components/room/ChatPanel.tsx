@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { avatarHue, initials } from "@/lib/utils-room";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { Image as ImageIcon, Loader2, MessageSquare, Search, Send, SmilePlus, UserPlus, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/popover";
 import { badgeMeta } from "@/lib/profile";
 import { UserProfileCard, MentionText, openSocialView } from "@/components/social/SocialOverlay";
+import { renderFormattedMessage, splitHighlight } from "@/lib/format-message";
 import { Lightbox } from "@/components/Lightbox";
 import { Pin, PinOff } from "lucide-react";
 
@@ -32,21 +33,43 @@ interface ChatMessage {
 }
 // (docs) `pinned` artık şemada tanımlı: messages.pinned / dms.pinned / groupMessages.pinned
 
-/** 🔍 Renders text with every query match wrapped in a yellow highlight. */
+/** 🔍 Renders text with every query match wrapped in a yellow highlight + 💬 inline formatting. */
 function HighlightText({ text, query, selfName }: { text: string; query: string; selfName?: string }) {
-  const highlighted = useMemo(() => {
-    if (query.length < 2) return null;
-    const lower = text.toLowerCase();
-    const idx = lower.indexOf(query);
-    return idx === -1 ? null : { before: text.slice(0, idx), hit: text.slice(idx, idx + query.length), after: text.slice(idx + query.length) };
-  }, [text, query]);
-  if (!highlighted) return <MentionText text={text} selfName={selfName} />;
+  const segments = useMemo(() => splitHighlight(text, query), [text, query]);
   return (
     <p className="mt-0.5 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-300">
-      {highlighted.before}
-      <mark className="ordex-search-hit">{highlighted.hit}</mark>
-      {highlighted.after}
+      {segments.map((seg, i) =>
+        seg.hit ? (
+          <mark key={i} className="ordex-search-hit">{seg.text}</mark>
+        ) : (
+          <FormattedSegment key={i} text={seg.text} selfName={selfName} />
+        ),
+      )}
     </p>
+  );
+}
+
+/** Renders one non-highlighted segment: mentions + Discord-style formatting. */
+function FormattedSegment({ text, selfName }: { text: string; selfName?: string }) {
+  const parts = useMemo(() => text.split(/(@[\wçğıöşüÇĞİÖŞÜ.]{2,32})/gu), [text]);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("@") ? (
+          <span
+            key={i}
+            className={cn(
+              "rounded bg-[var(--ordex-accent-soft)] px-1 font-medium text-[var(--ordex-accent)]",
+              selfName && part.toLowerCase() === `@${selfName.toLowerCase()}` && "bg-sky-500/20 text-sky-300",
+            )}
+          >
+            {part}
+          </span>
+        ) : (
+          <Fragment key={i}>{renderFormattedMessage(part)}</Fragment>
+        ),
+      )}
+    </>
   );
 }
 

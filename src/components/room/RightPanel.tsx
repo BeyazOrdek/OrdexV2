@@ -15,6 +15,8 @@ import {
   PhoneOff,
   Play,
   Trash2,
+  UserCog,
+  UserRoundSearch,
   Users,
   Video,
   VideoOff,
@@ -24,6 +26,7 @@ import {
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import {
   ContextMenu,
@@ -33,12 +36,12 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { endActiveCall, useCallState } from "@/components/social/SocialOverlay";
+import { endActiveCall, useCallState, UserProfileCard, type PublicUserLite } from "@/components/social/SocialOverlay";
 
 interface RightPanelProps {
   roomId: string;
   sessionId: string;
-  participants: { sessionId: string; userName: string; avatarHue: number; inVoice: boolean }[];
+  participants: { sessionId: string; userId: string; userName: string; avatarHue: number; inVoice: boolean }[];
   voiceParticipants: VoiceParticipant[];
   inVoice: boolean;
   micOn: boolean;
@@ -54,6 +57,11 @@ interface RightPanelProps {
   /** Local per-peer volume (0–200 %) — context-menu mixer. */
   getPeerVolume: (sessionId: string) => number;
   setPeerVolume: (sessionId: string, volume: number) => void;
+  /** 🖱️ Owner extras: kick members from the room via context menu. */
+  isOwner: boolean;
+  onKickUser: (target: { userId: string; userName: string; sessionId: string }) => void;
+  /** Open the Discord-style profile card for any room member. */
+  publicUserFor: (userId: string) => PublicUserLite | undefined;
 }
 
 export function RightPanel({
@@ -73,6 +81,9 @@ export function RightPanel({
   onToggleKrisp,
   getPeerVolume,
   setPeerVolume,
+  isOwner,
+  onKickUser,
+  publicUserFor,
 }: RightPanelProps) {
   const { user } = useAuth();
   const queue = useQuery(api.rooms.listQueue, { roomId: roomId as never }) ?? [];
@@ -261,6 +272,18 @@ export function RightPanel({
                   >
                     <VolumeX className="size-3.5" /> Yerel olarak sustur (%0)
                   </ContextMenuItem>
+                  <ContextMenuSeparator className="bg-white/10" />
+                  <UserProfileMenuItem user={publicUserFor(p.userId) ?? fallbackLite(p)} />
+                  {isOwner && (
+                    <ContextMenuItem
+                      className="text-xs text-red-400 focus:bg-red-500/15 focus:text-red-300"
+                      onSelect={() =>
+                        onKickUser({ userId: p.userId, userName: p.userName, sessionId: p.sessionId })
+                      }
+                    >
+                      <UserCog className="size-3.5" /> Odadan At
+                    </ContextMenuItem>
+                  )}
                 </ContextMenuContent>
               )}
             </ContextMenu>
@@ -273,22 +296,42 @@ export function RightPanel({
         </p>
         <div className="space-y-1">
           {participants.map((p) => (
-            <div key={p.sessionId} className="flex items-center gap-2 px-2 py-1">
-              <span
-                className="flex size-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                style={{ background: `hsl(${p.avatarHue} 65% 45%)` }}
-              >
-                {initials(p.userName)}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">
-                {p.userName}
-              </span>
-              {p.inVoice && (
-                <span title="Sesli kanalda">
-                  <Volume2 className="size-3 shrink-0 text-emerald-400" />
-                </span>
+            <ContextMenu key={p.sessionId}>
+              <ContextMenuTrigger asChild>
+                <div className="flex cursor-context-menu items-center gap-2 rounded-md px-2 py-1 transition-colors hover:bg-white/5">
+                  <span
+                    className="flex size-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                    style={{ background: `hsl(${p.avatarHue} 65% 45%)` }}
+                  >
+                    {initials(p.userName)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">
+                    {p.userName}
+                  </span>
+                  {p.inVoice && (
+                    <span title="Sesli kanalda">
+                      <Volume2 className="size-3 shrink-0 text-emerald-400" />
+                    </span>
+                  )}
+                </div>
+              </ContextMenuTrigger>
+              {p.userId !== user?._id && (
+                <ContextMenuContent className="ordex-panel-2 w-56 border-white/10">
+                  <ContextMenuLabel className="text-xs text-zinc-400">{p.userName}</ContextMenuLabel>
+                  <UserProfileMenuItem user={publicUserFor(p.userId) ?? fallbackLite(p)} />
+                  {isOwner && (
+                    <ContextMenuItem
+                      className="text-xs text-red-400 focus:bg-red-500/15 focus:text-red-300"
+                      onSelect={() =>
+                        onKickUser({ userId: p.userId, userName: p.userName, sessionId: p.sessionId })
+                      }
+                    >
+                      <UserCog className="size-3.5" /> Odadan At
+                    </ContextMenuItem>
+                  )}
+                </ContextMenuContent>
               )}
-            </div>
+            </ContextMenu>
           ))}
         </div>
       </div>
@@ -452,4 +495,31 @@ function VoiceFooter({
       )}
     </div>
   );
+}
+
+/** 👤 Context-menu item that opens the Discord-style profile card popover. */
+function UserProfileMenuItem({ user }: { user: PublicUserLite }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <ContextMenuItem
+          className="text-xs focus:bg-white/10"
+          onSelect={(e) => e.preventDefault()}
+        >
+          <UserRoundSearch className="size-3.5" /> Profil İncele
+        </ContextMenuItem>
+      </PopoverTrigger>
+      <PopoverContent side="left" className="ordex-panel-2 w-72 border-white/10 p-0">
+        <UserProfileCard user={user} />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Fallback lite profile when the public-user row hasn't loaded yet. */
+function fallbackLite(p: { userId?: string; userName: string; avatarHue: number }): PublicUserLite {
+  return {
+    _id: (p.userId ?? "") as never,
+    name: p.userName,
+  };
 }

@@ -118,6 +118,100 @@ export const createRoom = mutation({
   },
 });
 
+export const ROOM_KICKED_ERROR = "ROOM_KICKED";
+
+/**
+ * Thrown by joinRoom / presence.heartbeat when the requesting user has been
+ * removed from the room by its owner. Room.tsx shows a dedicated kicked
+ * screen for this case (distinct from the generic "room closed" one).
+ */
+export async function assertNotKicked(
+  ctx: MutationCtx,
+  roomId: Id<"rooms">,
+  userId: Id<"users">,
+) {
+  const kick = await ctx.db
+    .query("roomKicks")
+    .withIndex("by_room_user", (q) => q.eq("roomId", roomId).eq("userId", userId))
+    .unique();
+  if (kick) throw new Error(ROOM_KICKED_ERROR);
+}
+
+/** Is the session's user the owner (creator) of this room? Context-menu gate. */
+export const isRoomOwner = query({
+  args: { roomId: v.id("rooms"), sessionId: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return false;
+    const room = await ctx.db.get(args.roomId);
+    return room !== null && room.createdByUserId === userId;
+  },
+});
+
+/**
+ * 🚪 Owner removes a participant from the room: presence + membership are
+ * deleted (their heartbeat throws ROOM_KICKED → they see the kicked screen)
+ * and a roomKicks row blocks re-entry until the room itself is deleted.
+ */
+export const kickFromRoom = mutation({
+  args: {
+    roomId: v.id("rooms"),
+    sessionId: v.string(), // target session to evict
+    userId: v.id("users"), // target user to block re-entry
+    userName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const ownerId = await requireUser(ctx);
+    const room = await ctx.db.get(args.roomId);
+    if (!room) throw new Error("Oda bulunamadı.");
+    if (room.createdByUserId !== ownerId) throw new Error("Sadece oda sahibi kullanıcı atabilir.");
+    if (args.userId === ownerId) throw new Error("Kendini atamazsın.");
+
+    // Evict every presence session that belongs to the target user.
+    const rows = await ctx.db
+      .query("presence")
+      .withIndex("by_room", (q) => q.eq("roomId", args.roomId))
+      .collect();
+    const targets = rows.filter((r) => r.userId === args.userId);
+    await Promise.all(targets.map((t) => ctx.db.delete(t._id)));
+    // Drop their membership too so the member list stays consistent.
+    const membership = await ctx.db
+      .query("memberships")
+      .withIndex("by_room_user", (q) => q.eq("roomId", args.roomId).eq("userId", args.userId))
+      .unique();
+    if (membership) await ctx.db.delete(membership._id);
+
+    const existing = await ctx.db
+      .query("roomKicks")
+      .withIndex("by_room_user", (q) => q.eq("roomId", args.roomId).eq("userId", args.userId))
+      .unique();
+    if (!existing) {
+      await ctx.db.insert("roomKicks", {
+        roomId: args.roomId,
+        userId: args.userId,
+        userName: args.userName,
+        kickedByUserId: ownerId,
+        kickedAt: Date.now(),
+      });
+    }
+    return { evicted: targets.length };
+  },
+});
+
+/** Reactive kick check for the current session's user (client-side screen). */
+export const getMyKick = query({
+  args: { roomId: v.id("rooms"), sessionId: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+    const kick = await ctx.db
+      .query("roomKicks")
+      .withIndex("by_room_user", (q) => q.eq("roomId", args.roomId).eq("userId", userId))
+      .unique();
+    return kick ? { userName: kick.userName, kickedAt: kick.kickedAt } : null;
+  },
+});
+
 export const joinRoom = mutation({
   args: { code: v.string() },
   handler: async (ctx, args) => {
@@ -128,6 +222,7 @@ export const joinRoom = mutation({
       .withIndex("by_code", (q) => q.eq("code", code))
       .unique();
     if (!room) throw new Error("Bu kodla bir oda bulunamadı.");
+    await assertNotKicked(ctx, room._id, userId);
     const existing = await ctx.db
       .query("memberships")
       .withIndex("by_room_user", (q) =>

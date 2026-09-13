@@ -2,18 +2,30 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { krispEnabled } from "@/lib/prefs";
+import {
+  autoGainEnabled,
+  echoCancellationEnabled,
+  krispEnabled,
+  micAudioConstraints,
+  preferredMicId,
+  pttKey,
+  voiceMode,
+  type VoiceMode,
+} from "@/lib/prefs";
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
-/** Krisp-style mic chain: echo cancellation + noise suppression + AGC. */
-function micConstraints(krisp: boolean): MediaTrackConstraints {
-  return krisp
-    ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-    : { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+/** Krisp-style mic chain honoring the per-toggle settings (Ses & Görüntü). */
+function micConstraints(): MediaTrackConstraints {
+  return {
+    ...micAudioConstraints(),
+    // Redundant but explicit: krisp master + individual toggles + device pick.
+    echoCancellation: krispEnabled() && echoCancellationEnabled(),
+    autoGainControl: krispEnabled() && autoGainEnabled(),
+  };
 }
 
 interface Peer {
@@ -31,6 +43,8 @@ interface Peer {
 
 export interface VoiceSessionInfo {
   sessionId: string;
+  /** Convex user id — context-menu profile cards / owner kicks key off it. */
+  userId: string;
   userName: string;
   avatarHue: number;
   micOn: boolean;
@@ -73,6 +87,8 @@ export interface VoiceApi {
   /** Local per-user gain 0–2 (1 = %100, 2 = %200). */
   getPeerVolume: (sessionId: string) => number;
   setPeerVolume: (sessionId: string, volume: number) => void;
+  /** Push-to-talk: true while the PTT key is held (micOn follows this in ptt mode). */
+  pttActive: boolean;
 }
 
 /** Perfect-negotiation polite flag: lexicographically smaller session is polite. */
@@ -130,6 +146,11 @@ export function useVoice({
   const [, bumpPeerVolumes] = useState(0); // re-render so UI sliders stay in sync
   // Reactive mirror of the Krisp pref so toggle buttons update instantly.
   const [krispState, setKrispState] = useState(() => krispEnabled());
+  // 🗣️ Push-to-talk: PTT mode gates the mic on a held key.
+  const pttModeRef = useRef<VoiceMode>(voiceMode());
+  const pttKeyRef = useRef(pttKey());
+  const pttHeldRef = useRef(false);
+  const [pttActive, setPttActive] = useState(false);
   // Screen / game broadcast state (gaming rooms).
   const [isSharing, setIsSharing] = useState(false);
   const shareStreamRef = useRef<MediaStream | null>(null);
@@ -153,6 +174,50 @@ export function useVoice({
       if (track.kind === kind) track.enabled = enabled;
     }
   }, []);
+
+  // 🗣️ Push-to-talk: hold the configured key to open the mic. track.enabled
+  // flips WITHOUT touching micOnRef so the user's toggle choice is preserved —
+  // PTT "amplifies" the existing state instead of fighting it.
+  useEffect(() => {
+    pttModeRef.current = voiceMode();
+    pttKeyRef.current = pttKey();
+  }, []);
+  useEffect(() => {
+    if (pttModeRef.current !== "ptt") return;
+    const isPttKey = (e: KeyboardEvent) =>
+      !e.repeat && (e.code === pttKeyRef.current || (pttKeyRef.current === "" && e.code === "Space"));
+    const down = (e: KeyboardEvent) => {
+      if (!inVoiceRef.current || !isPttKey(e)) return;
+      // Never hijack typing in inputs.
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement | null)?.isContentEditable) return;
+      e.preventDefault();
+      pttHeldRef.current = true;
+      setPttActive(true);
+      setTrackEnabled("audio", true);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (!isPttKey(e)) return;
+      pttHeldRef.current = false;
+      setPttActive(false);
+      // Release re-applies the user's explicit mute choice.
+      setTrackEnabled("audio", micOnRef.current);
+    };
+    const blur = () => {
+      if (!pttHeldRef.current) return;
+      pttHeldRef.current = false;
+      setPttActive(false);
+      setTrackEnabled("audio", micOnRef.current);
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, [setTrackEnabled]);
 
   const attachSpeakingMonitor = useCallback((stream: MediaStream) => {
     if (stream.getAudioTracks().length === 0) return;
@@ -468,7 +533,7 @@ export function useVoice({
       // Video is requested lazily via the camera toggle, so permission dialog
       // and channel latency stay minimal.
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: micConstraints(krispEnabled()),
+        audio: micConstraints(),
         video: false,
       });
       localStreamRef.current = stream;
@@ -550,7 +615,7 @@ export function useVoice({
     if (!localStreamRef.current) {
       try {
         const mic = await navigator.mediaDevices.getUserMedia({
-          audio: micConstraints(krispEnabled()),
+          audio: micConstraints(),
         });
         localStreamRef.current = mic;
         setLocalStream(mic);
@@ -631,7 +696,7 @@ export function useVoice({
       if (!stream) {
         // Not in voice: behave like a voice join with camera.
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: micConstraints(krispEnabled()),
+          audio: micConstraints(),
           video: { width: { ideal: 640 }, height: { ideal: 480 } },
         });
         localStreamRef.current = stream;
@@ -692,7 +757,7 @@ export function useVoice({
     if (!inVoiceRef.current || !localStreamRef.current) return;
     const wasMuted = !micOnRef.current;
     try {
-      const fresh = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(next), video: false });
+      const fresh = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false });
       const old = localStreamRef.current;
       if (old) {
         for (const t of old.getTracks()) t.stop();
@@ -769,5 +834,6 @@ export function useVoice({
     toggleKrisp,
     getPeerVolume,
     setPeerVolume,
+    pttActive,
   };
 }

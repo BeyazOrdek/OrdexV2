@@ -2,6 +2,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { micAudioConstraints } from "@/lib/prefs";
 import { playSound, useCallSound } from "@/lib/sounds";
 import { getSessionId } from "@/lib/utils-room";
 
@@ -239,8 +240,9 @@ export function useCall(): CallApi {
 
   const ensureMic = useCallback(async () => {
     if (localStreamRef.current) return localStreamRef.current;
+    // Mic prefs: chosen input device + EC/NS/AGC toggles (Ses & Görüntü settings).
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: micAudioConstraints(),
       video: false,
     });
     localStreamRef.current = stream;

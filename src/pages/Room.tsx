@@ -12,18 +12,15 @@ import { useVoice } from "@/hooks/use-voice";
 import { useMediaSync } from "@/hooks/use-media-sync";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { avatarHue, getSessionId, type ParsedMediaLink } from "@/lib/utils-room";
-import { reportActiveRoom } from "@/components/social/SocialOverlay";
+import { reportActiveRoom, type PublicUserLite } from "@/components/social/SocialOverlay";
 import { useMutation, useQuery } from "convex/react";
-import { DoorOpen, Home, Loader2, LogOut } from "lucide-react";
+import { DoorOpen, Home, Loader2, ShieldAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+
 import { useAutoAfk } from "@/hooks/use-auto-afk";
 import {
   ResizableHandle,
@@ -106,16 +103,16 @@ export default function Room() {
     );
   }
 
-  return (
-    <RoomView
-      roomId={roomId}
-      roomCode={room.code}
-      roomName={room.name}
-      roomType={room.roomType ?? "cinema"}
-      sessionId={sessionId}
-      userName={user?.name ?? "Misafir"}
-      userId={user?._id ?? "anon"}
-    />
+  return (      <RoomView
+        roomId={roomId}
+        roomCode={room.code}
+        roomName={room.name}
+        roomType={room.roomType ?? "cinema"}
+        sessionId={sessionId}
+        userName={user?.name ?? "Misafir"}
+        userId={user?._id ?? "anon"}
+        ownerId={room.createdByUserId}
+      />
   );
 }
 
@@ -127,6 +124,7 @@ function RoomView({
   sessionId,
   userName,
   userId,
+  ownerId,
 }: {
   roomId: Id<"rooms">;
   roomCode: string;
@@ -135,6 +133,7 @@ function RoomView({
   sessionId: string;
   userName: string;
   userId: string;
+  ownerId: Id<"users">;
 }) {
   const navigate = useNavigate();
   // 😴 Global auto-AFK watcher (5 dk hareketsizlik → Boşta 🌙).
@@ -161,7 +160,7 @@ function RoomView({
     camOn: voiceUi.camOn,
     isSharing: voiceUi.isSharing,
   });
-  const { roomClosed } = presence;
+  const { roomClosed, kicked, participants } = presence;
 
   // Tell the global social layer which room is open (mention/unread counting).
   useEffect(() => {
@@ -175,6 +174,37 @@ function RoomView({
     voiceSessions: presence.voiceSessions,
     onVoiceStateChange: setVoiceUi,
   });
+
+  // 🖱️ Owner-only context-menu extras: remove a member from the room.
+  const isOwner = ownerId === userId;
+  const kickFromRoom = useMutation(api.rooms.kickFromRoom);
+  const handleKickUser = useCallback(
+    (target: { userId: string; userName: string; sessionId: string }) => {
+      void kickFromRoom({
+        roomId,
+        sessionId: target.sessionId,
+        userId: target.userId as Id<"users">,
+        userName: target.userName,
+      }).catch(() => undefined);
+      toast.info(`${target.userName} odadan atıldı.`);
+    },
+    [roomId, kickFromRoom],
+  );
+
+  // 👤 Public profiles for context-menu profile cards.
+  const memberIds = useMemo(
+    () => [...new Set(participants.map((p) => p.userId))] as Id<"users">[],
+    [participants],
+  );
+  const publicRows = useQuery(
+    api.users.getUsersPublic,
+    memberIds.length > 0 ? { userIds: memberIds } : "skip",
+  );
+  const publicUserFor = useCallback(
+    (uid: string): PublicUserLite | undefined =>
+      (publicRows ?? []).find((p) => String(p._id) === uid),
+    [publicRows],
+  );
 
   const sync = useMediaSync({
     roomId: roomId as Id<"rooms">,
@@ -230,7 +260,7 @@ function RoomView({
         <RightPanel
           roomId={roomId}
           sessionId={sessionId}
-          participants={presence.participants}
+          participants={participants}
           voiceParticipants={voice.participants}
           inVoice={voice.inVoice}
           micOn={voice.micOn}
@@ -244,10 +274,36 @@ function RoomView({
           onToggleKrisp={() => void voice.toggleKrisp()}
           getPeerVolume={voice.getPeerVolume}
           setPeerVolume={voice.setPeerVolume}
+          isOwner={isOwner}
+          onKickUser={handleKickUser}
+          publicUserFor={publicUserFor}
         />
       </div>
     </div>
   );
+
+  // 🚪 The owner removed this user — show a dedicated kicked screen.
+  if (kicked) {
+    return (
+      <main className="ordex-bg flex min-h-screen flex-col items-center justify-center gap-4 text-center">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-red-500/15 text-red-400">
+          <ShieldAlert className="size-7" />
+        </span>
+        <div>
+          <p className="text-lg font-semibold text-white">Odadan atıldın</p>
+          <p className="mt-1 max-w-sm text-sm text-[var(--ordex-muted)]">
+            Oda sahibi seni bu odadan çıkardı. Ses bağlantın kapatıldı.
+          </p>
+        </div>
+        <Button
+          onClick={() => navigate("/")}
+          className="gap-2 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)]"
+        >
+          <Home className="size-4" /> Ana sayfaya dön
+        </Button>
+      </main>
+    );
+  }
 
   // Auto room cleanup: when the last occupant leaves, the backend deletes the
   // room and everyone's reactive lists update. Occupants still inside get a
@@ -344,7 +400,7 @@ function RoomView({
             collapsedSize={0}
             className="overflow-hidden"
           >
-            <LeftPanel activeCode={roomCode} />
+            <LeftPanel activeCode={roomCode} onLeaveRoom={leaveRoom} />
           </ResizablePanel>
           <ResizableHandle
             className={cn(
@@ -401,29 +457,17 @@ function RoomView({
               onToggleKrisp={() => void voice.toggleKrisp()}
               getPeerVolume={voice.getPeerVolume}
               setPeerVolume={voice.setPeerVolume}
+              isOwner={isOwner}
+              onKickUser={handleKickUser}
+              publicUserFor={publicUserFor}
             />
           ) : (
             <div className="ordex-panel h-full border-r border-white/5">
-              <LeftPanel activeCode={roomCode} />
+              <LeftPanel activeCode={roomCode} onLeaveRoom={leaveRoom} />
             </div>
           )}
         </div>
       )}
-
-      {/* Always-visible Leave Room button (even in cinema mode) */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={leaveRoom}
-            className="fixed right-3 top-3 z-[60] flex h-9 items-center gap-1.5 rounded-full border border-red-500/30 bg-[color-mix(in_srgb,var(--ordex-panel-2)_82%,red_18%)] px-3 text-xs font-semibold text-red-300 shadow-lg transition-colors hover:border-red-500/60 hover:text-red-200"
-            title="Odadan çık — ana sayfaya dön"
-          >
-            <LogOut className="size-3.5" />
-            {!cinema && <span>Odadan çık</span>}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">Odayı terk et ve ana sayfaya dön</TooltipContent>
-      </Tooltip>
 
       {isMobile && (
         <MobileNav

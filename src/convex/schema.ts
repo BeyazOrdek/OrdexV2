@@ -102,6 +102,17 @@ const schema = defineSchema(
       .index("by_user", ["userId"])
       .index("by_user_room", ["userId", "roomId"]),
 
+    // 🚪 Room kick ledger — the owner can remove members; kicked users see a
+    // "Odadan atıldın" screen and cannot re-enter until the room is deleted.
+    roomKicks: defineTable({
+      roomId: v.id("rooms"),
+      userId: v.id("users"),
+      userName: v.string(),
+      kickedByUserId: v.id("users"),
+      kickedAt: v.number(),
+    })
+      .index("by_room_user", ["roomId", "userId"]),
+
     reactions: defineTable({
       messageId: v.id("messages"),
       roomId: v.id("rooms"),

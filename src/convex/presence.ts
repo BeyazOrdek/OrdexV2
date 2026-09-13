@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { deleteRoomCascade, ROOM_CLOSED_ERROR } from "./rooms";
+import { assertNotKicked, deleteRoomCascade, ROOM_CLOSED_ERROR } from "./rooms";
 
 /** Called every ~10s and whenever voice state changes. Keeps the participant list fresh. */
 export const heartbeat = mutation({
@@ -22,6 +22,12 @@ export const heartbeat = mutation({
     // Room was auto-deleted (everyone left)? Do not resurrect it with a new
     // presence row — tell the client it is closed instead.
     if (!(await ctx.db.get(args.roomId))) throw new Error(ROOM_CLOSED_ERROR);
+    // 🚪 Kicked users cannot keep heartbeating — Room.tsx reacts to this
+    // error by swapping the whole view for the "Odadan atıldın" screen.
+    await assertNotKicked(ctx, args.roomId, userId);
+    // 🚪 Kicked users cannot keep heartbeating — Room.tsx reacts to this
+    // error by swapping the whole view for the "Odadan atıldın" screen.
+    await assertNotKicked(ctx, args.roomId, userId);
     const existing = await ctx.db
       .query("presence")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))

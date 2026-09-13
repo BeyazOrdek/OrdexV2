@@ -32,8 +32,10 @@ import {
   STATUS_PRESETS,
 } from "@/lib/profile";
 import { ORDEX_THEMES, useTheme } from "@/lib/theme";
+import { VoiceSettingsSection } from "@/components/settings/VoiceSettingsSection";
+import { AudioLines } from "lucide-react";
 
-export type SettingsSection = "profile" | "appearance" | "account";
+export type SettingsSection = "profile" | "appearance" | "voice" | "account";
 
 interface SettingsModalProps {
   open: boolean;
@@ -49,6 +51,7 @@ const SECTIONS: {
 }[] = [
   { id: "profile", label: "Profilim", icon: UserRoundCog },
   { id: "appearance", label: "Görünüm & Temalar", icon: Palette },
+  { id: "voice", label: "Ses & Görüntü", icon: AudioLines },
   { id: "account", label: "Hesap Ayarları", icon: SettingsIcon },
 ];
 
@@ -208,6 +211,20 @@ export function SettingsModal({ open, onOpenChange, initialSection = "profile" }
               <p className="mt-4 text-center text-[10px] text-zinc-600">
                 ÖRDEX · 6 tema · data-theme motoru
               </p>
+            </>
+          )}
+
+          {section === "voice" && (
+            <>
+              <DialogTitle className="flex items-center gap-2 text-lg font-bold text-white">
+                <AudioLines className="size-5 text-[var(--ordex-accent)]" /> Ses & Görüntü
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-xs">
+                Mikrofon/hoparlör seçimi, Krisp gürültü engelleme, bas-konuş ve arama sesleri.
+              </DialogDescription>
+              <div className="mt-4">
+                <VoiceSettingsSection />
+              </div>
             </>
           )}
 
