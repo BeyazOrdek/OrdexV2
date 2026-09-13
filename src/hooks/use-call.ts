@@ -1,5 +1,5 @@
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { micAudioConstraints } from "@/lib/prefs";
@@ -94,6 +94,20 @@ export function useCall(): CallApi {
   const activeCallIdRef = useRef<Id<"calls"> | null>(null);
   // Mirror for event handlers created before `deafened` existed.
   const deafenedRef = useRef(false);
+  // 🐛 Fix: signals that arrive BEFORE our RTCPeerConnection exists (the
+  // callee's offer can beat the caller's reactive mirror update) used to be
+  // deleted unheard — ~half of all calls stayed silent. They are stashed
+  // here and replayed the moment the peer is created.
+  const pendingSignalsRef = useRef<Doc<"callSignals">[]>([]);
+  /** Signal ids already handled (or queued) — guards double processing. */
+  const seenSignalsRef = useRef<Set<string>>(new Set());
+  // 🐛 Fix: caller-side ring timeout — without it a never-accepted call rang
+  // its dial tone forever.
+  const ringTimeoutRef = useRef<number | null>(null);
+  const stateRef = useRef<CallState>("idle");
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const sendSignal = useCallback(
     (
@@ -147,6 +161,13 @@ export function useCall(): CallApi {
     (playHangupTone: boolean) => {
       teardownPeer();
       activeCallIdRef.current = null;
+      if (ringTimeoutRef.current) {
+        window.clearTimeout(ringTimeoutRef.current);
+        ringTimeoutRef.current = null;
+      }
+      // Stale signals from a dead call must never leak into the next one.
+      pendingSignalsRef.current = [];
+      seenSignalsRef.current.clear();
       setState("idle");
       setPeer(null);
       setMicOn(true);
@@ -238,6 +259,77 @@ export function useCall(): CallApi {
     [sessionId, sendSignal, endCallM, finish],
   );
 
+  /**
+   * 🐛 Fix: process one relayed signal. Offers/answers that arrive before the
+   * peer exists are stashed in pendingSignalsRef (by the caller of this
+   * helper) instead of being deleted — this was the main "DM call connects
+   * but stays silent" bug.
+   */
+  const handleSignal = useCallback(
+    async (signal: Doc<"callSignals">) => {
+      const callId = activeCallIdRef.current;
+      try {
+        if (!callId) return;
+        // Reactive list re-delivers rows until deleted — never process one twice.
+        if (seenSignalsRef.current.has(signal._id)) {
+          // Self-heal: the first delete may have failed (network blip); retry.
+          deleteSignal(signal._id);
+          return;
+        }
+        seenSignalsRef.current.add(signal._id);
+        // Signal from a previous/dead call — discard it, never process it.
+        if (signal.callId !== callId) {
+          deleteSignal(signal._id);
+          return;
+        }
+        if (signal.kind === "offer" || signal.kind === "answer") {
+          const desc = JSON.parse(signal.payload) as RTCSessionDescriptionInit;
+          let pc = pcRef.current;
+          if (!pc) {
+            // Peer not built yet (mirror race): create it WITHOUT local media
+            // first — local tracks are added by the accept/caller flow, which
+            // also replays anything stashed meanwhile.
+            pc = createPeer(callId, signal.fromSession);
+          }
+          const offerCollision =
+            desc.type === "offer" && (makingOfferRef.current || pc.signalingState !== "stable");
+          ignoringOfferRef.current = !politeRef.current && offerCollision;
+          if (ignoringOfferRef.current) return;
+          await pc.setRemoteDescription(desc);
+          remoteSetRef.current = true;
+          const queued = candidateQueueRef.current.splice(0);
+          for (const c of queued) await pc.addIceCandidate(c).catch(() => undefined);
+          if (desc.type === "offer") {
+            await pc.setLocalDescription();
+            if (pc.localDescription) {
+              sendSignal(callId, signal.fromSession, "answer", JSON.stringify(pc.localDescription.toJSON()));
+            }
+          }
+        } else if (signal.kind === "ice") {
+          const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
+          const pc = pcRef.current;
+          if (!pc || !remoteSetRef.current) {
+            // No peer / remote description yet: keep it for the replay.
+            candidateQueueRef.current.push(candidate);
+            return;
+          }
+          await pc.addIceCandidate(candidate).catch(() => undefined);
+        }
+      } catch (err) {
+        console.warn("call signal failed", signal.kind, err);
+      } finally {
+        deleteSignal(signal._id);
+      }
+    },
+    [createPeer, sendSignal, deleteSignal],
+  );
+
+  /** Replay signals that arrived before the call/peer were ready. */
+  const drainPendingSignals = useCallback(() => {
+    const pending = pendingSignalsRef.current.splice(0);
+    for (const s of pending) void handleSignal(s);
+  }, [handleSignal]);
+
   const ensureMic = useCallback(async () => {
     if (localStreamRef.current) return localStreamRef.current;
     // Mic prefs: chosen input device + EC/NS/AGC toggles (Ses & Görüntü settings).
@@ -259,11 +351,21 @@ export function useCall(): CallApi {
       try {
         const { callId } = await startCall({ calleeId: peerUserId, callerSession: sessionId });
         activeCallIdRef.current = callId;
+        drainPendingSignals();
+        // 🐛 Fix: ring timeout — a call nobody accepts used to ring forever.
+        // After 45s we mark it missed and drop back to idle.
+        if (ringTimeoutRef.current) window.clearTimeout(ringTimeoutRef.current);
+        ringTimeoutRef.current = window.setTimeout(() => {
+          if (stateRef.current !== "outgoing-ringing") return;
+          const id = activeCallIdRef.current;
+          if (id) void endCallM({ callId: id, outcome: "missed" }).catch(() => undefined);
+          finish(false);
+        }, 45_000);
       } catch {
         finish(true);
       }
     },
-    [sessionId, startCall, finish, state],
+    [sessionId, startCall, endCallM, finish, state, drainPendingSignals],
   );
 
   const accept = useCallback(async () => {
@@ -271,18 +373,29 @@ export function useCall(): CallApi {
     if (!incoming || activeCallIdRef.current) return;
     try {
       const stream = await ensureMic();
-      await acceptCallM({ callId: incoming.callId, calleeSession: sessionId });
+      const res = await acceptCallM({ callId: incoming.callId, calleeSession: sessionId });
+      // 🐛 Fix: the caller may have cancelled in the same second — acceptCall
+      // then returns { ok: false }. Without this check the callee got stuck
+      // alone in a "Görüşme sürüyor" bar talking to nobody.
+      if (res && res.ok === false) {
+        finish(false);
+        return;
+      }
       activeCallIdRef.current = incoming.callId;
       setPeer({ name: incoming.peerName, avatarUrl: incoming.peerAvatar });
       setState("active");
-      const pc = createPeer(incoming.callId, incoming.callerSession);
+      // Reuse the peer handleSignal may have created while the offer raced
+      // ahead of this flow — creating a second pc would orphan the first.
+      const pc = pcRef.current ?? createPeer(incoming.callId, incoming.callerSession);
       for (const track of stream.getTracks()) pc.addTrack(track, stream);
+      // Replay anything that arrived before we were ready.
+      drainPendingSignals();
     } catch (err) {
       void endCallM({ callId: incoming.callId, outcome: "ended" });
       finish(true);
       console.warn("call accept failed", err);
     }
-  }, [incomingQuery, ensureMic, acceptCallM, sessionId, createPeer, endCallM, finish]);
+  }, [incomingQuery, ensureMic, acceptCallM, sessionId, createPeer, endCallM, finish, drainPendingSignals]);
 
   const reject = useCallback(() => {
     const incoming = incomingQuery;
@@ -337,8 +450,10 @@ export function useCall(): CallApi {
       void (async () => {
         try {
           const stream = await ensureMic();
-          const pc = createPeer(outgoingQuery._id, outgoingQuery.calleeSession as string);
+          // Reuse a peer the signal handler may have created already.
+          const pc = pcRef.current ?? createPeer(outgoingQuery._id, outgoingQuery.calleeSession as string);
           for (const track of stream.getTracks()) pc.addTrack(track, stream);
+          drainPendingSignals();
         } catch (err) {
           console.warn("caller mic failed", err);
           void endCallM({ callId: outgoingQuery._id, outcome: "ended" });
@@ -346,7 +461,7 @@ export function useCall(): CallApi {
         }
       })();
     }
-  }, [state, outgoingQuery, ensureMic, createPeer, endCallM, finish]);
+  }, [state, outgoingQuery, ensureMic, createPeer, endCallM, finish, drainPendingSignals]);
 
   // Outgoing call vanished from the server (rejected / timed out).
   useEffect(() => {
@@ -366,46 +481,31 @@ export function useCall(): CallApi {
   }, [state, outgoingQuery, calleeQuery, finish]);
 
   // ---- Consume call signals ----
+  // 🐛 Fix: the old loop silently DROPPED every signal that arrived before
+  // the local RTCPeerConnection existed (deleted in the finally block). The
+  // callee's offer frequently beat the caller's mirror update, so calls
+  // connected with one-way or zero audio. Signals now wait in a stash and
+  // are replayed the moment the call becomes locally active.
   useEffect(() => {
-    if (!signals || signals.length === 0 || !activeCallIdRef.current) return;
+    if (!signals || signals.length === 0) return;
     for (const signal of signals) {
-      void (async () => {
-        const pc = pcRef.current;
-        const callId = activeCallIdRef.current;
-        try {
-          if (!pc || !callId) return;
-          if (signal.kind === "offer" || signal.kind === "answer") {
-            const desc = JSON.parse(signal.payload) as RTCSessionDescriptionInit;
-            const offerCollision =
-              desc.type === "offer" && (makingOfferRef.current || pc.signalingState !== "stable");
-            ignoringOfferRef.current = !politeRef.current && offerCollision;
-            if (ignoringOfferRef.current) return;
-            await pc.setRemoteDescription(desc);
-            remoteSetRef.current = true;
-            const queued = candidateQueueRef.current.splice(0);
-            for (const c of queued) await pc.addIceCandidate(c).catch(() => undefined);
-            if (desc.type === "offer") {
-              await pc.setLocalDescription();
-              if (pc.localDescription) {
-                sendSignal(callId, signal.fromSession, "answer", JSON.stringify(pc.localDescription.toJSON()));
-              }
-            }
-          } else if (signal.kind === "ice") {
-            const candidate = JSON.parse(signal.payload) as RTCIceCandidateInit;
-            if (!remoteSetRef.current) {
-              candidateQueueRef.current.push(candidate);
-              return;
-            }
-            await pc.addIceCandidate(candidate).catch(() => undefined);
-          }
-        } catch (err) {
-          console.warn("call signal failed", signal.kind, err);
-        } finally {
+      if (!activeCallIdRef.current) {
+        // Call id not resolved yet (mutation still in flight): stash —
+        // start()/accept() drain this queue right after they set the ref.
+        if (
+          pendingSignalsRef.current.length < 50 &&
+          !seenSignalsRef.current.has(signal._id)
+        ) {
+          seenSignalsRef.current.add(signal._id);
+          pendingSignalsRef.current.push(signal);
+        } else if (pendingSignalsRef.current.length >= 50) {
           deleteSignal(signal._id);
         }
-      })();
+        continue;
+      }
+      void handleSignal(signal);
     }
-  }, [signals, sendSignal, deleteSignal]);
+  }, [signals, handleSignal, deleteSignal]);
 
   // Unmount safety: kill mic + peer when the hook goes away.
   useEffect(() => () => teardownPeer(), [teardownPeer]);
