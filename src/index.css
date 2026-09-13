@@ -474,3 +474,13 @@
     0 0 12px var(--ordex-glow);
   border-radius: 12px;
 }
+
+/* ============================================================
+   🖥️ Screen share videos — full frame visible, never cropped.
+   object-fit: contain keeps the whole desktop in view; the sharp
+   black backdrop makes letterboxing look intentional (Discord style).
+   ============================================================ */
+video.ordex-screen-video {
+  object-fit: contain;
+  background: #000;
+}

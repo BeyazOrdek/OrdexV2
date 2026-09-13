@@ -175,6 +175,11 @@ function RoomView({
     onVoiceStateChange: setVoiceUi,
   });
 
+  // 🖥️ Surface screen-share failures as a toast (permission denied etc.).
+  useEffect(() => {
+    if (voice.screenShareError) toast.error(voice.screenShareError);
+  }, [voice.screenShareError]);
+
   // 🖱️ Owner-only context-menu extras: remove a member from the room.
   const isOwner = ownerId === userId;
   const kickFromRoom = useMutation(api.rooms.kickFromRoom);
@@ -358,6 +363,8 @@ function RoomView({
         isSharing={voice.isSharing}
         localStream={voice.localStream}
         remoteStreams={voice.remoteStreams}
+        screenStream={voice.screenStream}
+        screenShareError={voice.screenShareError}
         onJoinVoice={() => void voice.join()}
         onLeaveVoice={voice.leave}
         onToggleMic={voice.toggleMic}

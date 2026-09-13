@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { VoiceParticipant } from "@/hooks/use-voice";
 import { endActiveCall, useCallState } from "@/components/social/SocialOverlay";
@@ -26,6 +27,10 @@ interface GamingStageProps {
   isSharing: boolean;
   localStream: MediaStream | null;
   remoteStreams: Map<string, MediaStream>;
+  /** 🖥️ Live display-capture stream for the sharer's own preview. */
+  screenStream?: MediaStream | null;
+  /** 🖥️ Screen-share specific error surface. */
+  screenShareError?: string | null;
   onJoinVoice: () => void;
   onLeaveVoice: () => void;
   onToggleMic: () => void;
@@ -48,6 +53,8 @@ export function GamingStage({
   isSharing,
   localStream,
   remoteStreams,
+  screenStream,
+  screenShareError,
   onJoinVoice,
   onLeaveVoice,
   onToggleMic,
@@ -72,16 +79,20 @@ export function GamingStage({
   }, []);
 
   // Attach the sharer's own preview.
+  // 🖥️ Fix: the preview attaches to the DISPLAY-CAPTURE stream — localStream
+  // only carries the mic while sharing, so binding to it showed a frozen/
+  // black frame. muted is mandatory (loopback would echo your own audio).
   useEffect(() => {
     const el = previewRef.current;
     if (!el) return;
-    if (isSharing && localStream) {
-      el.srcObject = localStream;
+    if (isSharing && screenStream) {
+      el.srcObject = screenStream;
+      el.muted = true; // hard guarantee: no self-echo from the preview
       void el.play().catch(() => undefined);
     } else {
       el.srcObject = null;
     }
-  }, [isSharing, localStream]);
+  }, [isSharing, screenStream]);
 
   // Attach the live broadcast from whoever is sharing (any participant).
   useEffect(() => {
@@ -121,16 +132,18 @@ export function GamingStage({
           ref={remoteRef}
           playsInline
           autoPlay
-          className={cn("absolute inset-0 size-full object-contain", !watching && "invisible")}
+          muted
+          className={cn("ordex-screen-video absolute inset-0 size-full object-contain", !watching && "invisible")}
         />
         {/* Sharer self-preview */}
         <video
           ref={previewRef}
           muted
           playsInline
+          autoPlay
           className={cn(
-            "absolute right-3 top-24 z-10 h-24 w-40 rounded-md border border-white/20 bg-black object-contain shadow-lg",
-            (!isSharing || !localStream) && "hidden",
+            "ordex-screen-video absolute right-3 top-24 z-10 h-24 w-40 rounded-md border border-white/20 bg-black object-contain shadow-lg",
+            (!isSharing || !screenStream) && "hidden",
           )}
         />
 
@@ -180,24 +193,31 @@ export function GamingStage({
       {/* Broadcast + voice control bar */}
       <div className="ordex-panel border-t border-white/5 px-3 py-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          {isSharing ? (
-            <Button
-              onClick={onStopShare}
-              variant="destructive"
-              className="h-9 shrink-0 gap-2 text-xs"
-              title="Yayını durdur"
-            >
-              <Square className="size-3.5" /> Yayını durdur
-            </Button>
-          ) : (
-            <Button
-              onClick={onStartShare}
-              className="h-9 shrink-0 gap-2 bg-[var(--ordex-accent)] text-xs text-white hover:bg-[var(--ordex-accent-hover)]"
-              title="Ekran / oyun yayını başlat"
-            >
-              <MonitorUp className="size-4" /> Yayın başlat
-            </Button>
-          )}
+          {/* 🖥️ Single toggle: green/active while the broadcast is live. */}
+          <Button
+            onClick={isSharing ? onStopShare : onStartShare}
+            className={cn(
+              "h-9 shrink-0 gap-2 text-xs font-medium text-white transition-colors",
+              isSharing
+                ? "bg-emerald-500 hover:bg-emerald-400"
+                : "bg-[var(--ordex-accent)] hover:bg-[var(--ordex-accent-hover)]",
+            )}
+            title={isSharing ? "Yayını durdur" : "Ekran / oyun yayını başlat"}
+          >
+            {isSharing ? (
+              <>
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-white/70" />
+                  <span className="relative inline-flex size-2 rounded-full bg-white" />
+                </span>
+                Yayındasın
+              </>
+            ) : (
+              <>
+                <MonitorUp className="size-4" /> Ekranı Paylaş
+              </>
+            )}
+          </Button>
 
           <span className="mx-1 hidden h-6 w-px bg-white/10 sm:block" />
 

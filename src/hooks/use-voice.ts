@@ -39,6 +39,33 @@ interface Peer {
   candidateQueue: RTCIceCandidateInit[];
   /** True once setRemoteDescription succeeded — queued candidates flushed. */
   remoteDescriptionSet: boolean;
+  /** True while this peer has a live outbound video sender (camera or screen). */
+  videoSentRef: boolean;
+}
+
+/**
+ * 🔑 Screen-share core: attach an outbound video track to one peer WITHOUT a
+ * full offer/answer cycle where possible. Peers that already send video get
+ * `sender.replaceTrack` (pure track swap, zero renegotiation); peers without a
+ * video m-line get `addTransceiver(track, sendonly)`, which seeds the sender
+ * slot so FUTURE track swaps are renegotiation-free too. Transceivers still
+ * fire onnegotiationneeded once — perfect negotiation absorbs it.
+ */
+async function attachVideoTrackToPeer(
+  peer: Peer,
+  track: MediaStreamTrack,
+  stream: MediaStream,
+): Promise<void> {
+  const pc = peer.pc;
+  const existing = pc.getSenders().find((s) => s.track?.kind === "video");
+  if (existing) {
+    await existing.replaceTrack(track);
+    peer.videoSentRef = true;
+    return;
+  }
+  const transceiver = pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+  if (!transceiver?.sender) throw new Error("addTransceiver başarısız");
+  peer.videoSentRef = true;
 }
 
 export interface VoiceSessionInfo {
@@ -72,6 +99,10 @@ export interface VoiceApi {
   camOn: boolean;
   isSharing: boolean;
   error: string | null;
+  /** 🖥️ Screen-share specific error (permission denied, device busy...). */
+  screenShareError: string | null;
+  /** 🖥️ The live display capture stream (self-preview attaches to this). */
+  screenStream: MediaStream | null;
   participants: VoiceParticipant[];
   localStream: MediaStream | null;
   remoteStreams: Map<string, MediaStream>;
@@ -153,8 +184,10 @@ export function useVoice({
   const [pttActive, setPttActive] = useState(false);
   // Screen / game broadcast state (gaming rooms).
   const [isSharing, setIsSharing] = useState(false);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const shareStreamRef = useRef<MediaStream | null>(null);
   const sharingRef = useRef(false);
+  const [screenShareError, setScreenShareError] = useState<string | null>(null);
 
   // Mirror voice state up to the parent without re-triggering effects.
   // (Ref writes happen in effects — never during render.)
@@ -172,6 +205,12 @@ export function useVoice({
     if (!stream) return;
     for (const track of stream.getTracks()) {
       if (track.kind === kind) track.enabled = enabled;
+    }
+    // 🖥️ While broadcasting, the screen track lives in its own stream — sync
+    // its enabled flag too so stop/start states stay consistent everywhere.
+    const share = shareStreamRef.current;
+    if (share && kind === "video") {
+      for (const track of share.getVideoTracks()) track.enabled = enabled;
     }
   }, []);
 
@@ -274,6 +313,14 @@ export function useVoice({
     async (peer: Peer) => {
       try {
         peer.makingOffer = true;
+        // 🖥️ Fix: when a new transceiver (e.g. an added screen share track)
+        // fires onnegotiationneeded while we're still in "have-local-offer",
+        // Chromium cannot build a fresh offer — the negotiation silently dies
+        // and the remote side never renders the stream. An explicit rollback
+        // resets signaling so a clean offer is always produced.
+        if (peer.pc.signalingState === "have-local-offer") {
+          await peer.pc.setLocalDescription({ type: "rollback" } as RTCSessionDescriptionInit);
+        }
         await peer.pc.setLocalDescription();
         await sendSignal({
           roomId,
@@ -304,12 +351,26 @@ export function useVoice({
         ignoringOffer: false,
         candidateQueue: [],
         remoteDescriptionSet: false,
+        videoSentRef: false,
       };
 
       const stream = localStreamRef.current;
       if (stream) {
         for (const track of stream.getTracks()) {
           pc.addTrack(track, stream);
+          if (track.kind === "video") peer.videoSentRef = true;
+        }
+      }
+      // 🖥️ Already broadcasting when a peer is (re)created (e.g. mesh repair
+      // after ICE failure)? Attach the screen track immediately so the new
+      // peer receives the live broadcast without waiting for anything else.
+      const share = shareStreamRef.current;
+      if (sharingRef.current && share) {
+        const screenTrack = share.getVideoTracks()[0];
+        if (screenTrack) {
+          void attachVideoTrackToPeer(peer, screenTrack, share).catch((err) =>
+            console.warn("screen attach on create failed", err),
+          );
         }
       }
 
@@ -562,18 +623,29 @@ export function useVoice({
       for (const track of stream.getTracks()) track.stop();
     }
     shareStreamRef.current = null;
-    // Restore peers to camera-off state: stop video senders.
+    setScreenStream(null);
+    setScreenShareError(null);
+    // 🖥️ Fix: restore peers to camera-off state via replaceTrack(null) on the
+    // SAME sender the screen track occupied — no peer teardown, no offer
+    // churn. The m-line stays, so the NEXT share starts renegotiation-free.
     for (const peer of peersRef.current.values()) {
       const sender = peer.pc.getSenders().find((s) => s.track?.kind === "video");
       if (sender) {
         void sender.replaceTrack(null).catch(() => undefined);
       }
+      peer.videoSentRef = false;
     }
   }, []);
 
-  /** Broadcast the display/game capture to every peer (replaces camera track). */
+  /**
+   * 🖥️ Broadcast the display/game capture to every peer.
+   * getDisplayMedia({ video, audio }) → replaceTrack on peers that already
+   * send video; addTransceiver(sendonly) on peers without a video m-line.
+   * `track.onended` (browser's native "Stop sharing" bar) restores cleanly.
+   */
   const startScreenShare = useCallback(async () => {
     if (sharingRef.current) return;
+    setScreenShareError(null);
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
@@ -588,45 +660,40 @@ export function useVoice({
             ? err.message
             : "Ekran paylaşımı başlatılamadı.";
       setError(message);
+      setScreenShareError(message);
       return;
     }
-    const track = stream.getVideoTracks()[0];
-    if (!track) return;
-    // Browser's built-in "stop sharing" button ends the broadcast cleanly.
-    track.addEventListener("ended", () => stopScreenShare());
+    const screenTrack = stream.getVideoTracks()[0];
+    if (!screenTrack) return;
     shareStreamRef.current = stream;
+    setScreenStream(stream);
     sharingRef.current = true;
     setIsSharing(true);
-    let replaced = false;
-    for (const peer of peersRef.current.values()) {
-      const sender = peer.pc.getSenders().find((s) => s.track?.kind === "video");
-      if (sender) {
-        await sender.replaceTrack(track);
-        replaced = true;
-      }
-    }
-    if (!replaced) {
-      for (const peer of peersRef.current.values()) {
-        peer.pc.addTrack(track, stream);
-      }
-    }
-    // If we were in a call without voice yet, also open the mic so viewers
-    // and sharer can talk (best-effort; sharing still works without it).
+    // Browser's built-in "stop sharing" button ends the broadcast cleanly —
+    // peers fall back to camera-off state automatically.
+    screenTrack.addEventListener("ended", () => stopScreenShare());
+
+    // Ensure the voice mesh exists before attaching video tracks. If we were
+    // NOT in voice, open the mic first so every peer is created with audio —
+    // viewers and sharer can then talk (best-effort; sharing works without it).
     if (!localStreamRef.current) {
       try {
-        const mic = await navigator.mediaDevices.getUserMedia({
-          audio: micConstraints(),
-        });
+        const mic = await navigator.mediaDevices.getUserMedia({ audio: micConstraints() });
         localStreamRef.current = mic;
         setLocalStream(mic);
         attachSpeakingMonitor(mic);
         inVoiceRef.current = true;
         setInVoice(true);
-        for (const peer of peersRef.current.values()) {
-          for (const t of mic.getAudioTracks()) peer.pc.addTrack(t, mic);
-        }
       } catch {
         /* voice is optional while sharing */
+      }
+    }
+
+    for (const peer of peersRef.current.values()) {
+      try {
+        await attachVideoTrackToPeer(peer, screenTrack, stream);
+      } catch (err) {
+        console.warn("screen track attach failed", err);
       }
     }
   }, [attachSpeakingMonitor, stopScreenShare]);
@@ -672,6 +739,12 @@ export function useVoice({
   }, [sessionId, setTrackEnabled]);
 
   const toggleCam = useCallback(async () => {
+    // 🖥️ Screen share owns the outbound video m-line — never rip it out from
+    // under a live broadcast (that kills the stream on every viewer).
+    if (sharingRef.current) {
+      setScreenShareError("Ekran paylaşımı sırasında kamera değiştirilemez. Önce yayını durdur.");
+      return;
+    }
     if (camOnRef.current) {
       // Turn camera off: flip the flag and stop the video track cleanly.
       camOnRef.current = false;
@@ -715,17 +788,14 @@ export function useVoice({
         // Replace the video sender per peer so no renegotiation is needed.
         let replaced = false;
         for (const peer of peersRef.current.values()) {
-          const sender = peer.pc.getSenders().find((s) => s.track?.kind === "video");
-          if (sender) {
-            await sender.replaceTrack(track);
+          try {
+            await attachVideoTrackToPeer(peer, track, stream);
             replaced = true;
+          } catch (err) {
+            console.warn("camera attach failed", err);
           }
         }
-        if (!replaced) {
-          for (const peer of peersRef.current.values()) {
-            peer.pc.addTrack(track, stream);
-          }
-        }
+        if (!replaced) setError("Kamera başlatılamadı.");
       }
       camOnRef.current = true;
       setCamOn(true);
@@ -740,7 +810,7 @@ export function useVoice({
     } finally {
       cameraAcquiringRef.current = false;
     }
-  }, [attachSpeakingMonitor, negotiate]);
+  }, [attachSpeakingMonitor]);
 
   /** Toggle Krisp-style processing: reopen the mic with new constraints. */
   const toggleKrisp = useCallback(async () => {
@@ -821,6 +891,8 @@ export function useVoice({
     camOn,
     isSharing,
     error,
+    screenShareError,
+    screenStream,
     participants,
     localStream,
     remoteStreams,
