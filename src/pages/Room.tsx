@@ -14,10 +14,22 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { avatarHue, getSessionId, type ParsedMediaLink } from "@/lib/utils-room";
 import { reportActiveRoom } from "@/components/social/SocialOverlay";
 import { useMutation, useQuery } from "convex/react";
-import { DoorOpen, Home, Loader2 } from "lucide-react";
+import { DoorOpen, Home, Loader2, LogOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 
 export default function Room() {
   const { code = "" } = useParams<{ code: string }>();
@@ -127,6 +139,11 @@ function RoomView({
   // Voice UI state mirrored up so presence heartbeats reflect it.
   const [voiceUi, setVoiceUi] = useState({ inVoice: false, micOn: true, camOn: true, isSharing: false });
 
+  /** Leave: kill voice/WebRTC, clear presence, then head back to the home page. */
+  const leaveRoom = useCallback(() => {
+    navigate("/");
+  }, [navigate]);
+
   // Dedicated host nodes for the media layers (kept out of the sync object so
   // consumers never read refs during render).
   const syncVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -220,6 +237,10 @@ function RoomView({
           onLeaveVoice={voice.leave}
           onToggleMic={voice.toggleMic}
           onToggleCam={voice.toggleCam}
+          krisp={voice.krisp}
+          onToggleKrisp={() => void voice.toggleKrisp()}
+          getPeerVolume={voice.getPeerVolume}
+          setPeerVolume={voice.setPeerVolume}
         />
       </div>
     </div>
@@ -250,50 +271,113 @@ function RoomView({
     );
   }
 
+  // Cinema mode collapses both side panels to zero (the stage itself stays
+  // mounted — unmounting it would kill the YouTube player lifecycle).
+  const leftPanelRef = useRef<ImperativePanelHandle | null>(null);
+  const rightPanelRef = useRef<ImperativePanelHandle | null>(null);
+  useEffect(() => {
+    if (isMobile) return;
+    if (cinema) {
+      leftPanelRef.current?.collapse();
+      rightPanelRef.current?.collapse();
+    } else {
+      // Restore only panels that are actually collapsed, so a user-chosen
+      // manual size is never snapped back.
+      if ((leftPanelRef.current?.getSize() ?? 16) < 1) leftPanelRef.current?.resize(16);
+      if ((rightPanelRef.current?.getSize() ?? 25) < 1) rightPanelRef.current?.resize(25);
+    }
+  }, [cinema, isMobile]);
+
+  const stage =
+    roomType === "gaming" ? (
+      <GamingStage
+        roomName={roomName}
+        roomCode={roomCode}
+        participants={voice.participants}
+        inVoice={voice.inVoice}
+        micOn={voice.micOn}
+        isSharing={voice.isSharing}
+        localStream={voice.localStream}
+        remoteStreams={voice.remoteStreams}
+        onJoinVoice={() => void voice.join()}
+        onLeaveVoice={voice.leave}
+        onToggleMic={voice.toggleMic}
+        onStartShare={voice.startScreenShare}
+        onStopShare={voice.stopScreenShare}
+        cinemaMode={cinema}
+        onToggleCinema={toggleCinema}
+      />
+    ) : (
+      <MediaPanel
+        roomName={roomName}
+        roomCode={roomCode}
+        sync={sync}
+        ytHostRef={ytHostRef}
+        videoRef={syncVideoRef}
+        onAddLink={addLink}
+        onNext={skipToNext}
+        localStream={voice.localStream}
+        camOn={voice.camOn}
+        cinemaMode={cinema}
+        onToggleCinema={toggleCinema}
+      />
+    );
+
   return (
     <main className="flex h-screen overflow-hidden bg-background text-foreground">
-      {!cinema && !isMobile && (
-        <div className="w-60 shrink-0">
-          <LeftPanel activeCode={roomCode} />
-        </div>
-      )}
-
-      <div className="min-w-0 flex-1 pb-16 md:pb-0">
-        {isMobile ? (
-          mobileTab === "stage" ? (
-            roomType === "gaming" ? (
-              <GamingStage
-                roomName={roomName}
-                roomCode={roomCode}
-                participants={voice.participants}
-                inVoice={voice.inVoice}
-                micOn={voice.micOn}
-                isSharing={voice.isSharing}
-                localStream={voice.localStream}
-                remoteStreams={voice.remoteStreams}
-                onJoinVoice={() => void voice.join()}
-                onLeaveVoice={voice.leave}
-                onToggleMic={voice.toggleMic}
-                onStartShare={voice.startScreenShare}
-                onStopShare={voice.stopScreenShare}
-                cinemaMode={cinema}
-                onToggleCinema={toggleCinema}
-              />
-            ) : (
-              <MediaPanel
-                roomName={roomName}
-                roomCode={roomCode}
-                sync={sync}
-                ytHostRef={ytHostRef}
-                videoRef={syncVideoRef}
-                onAddLink={addLink}
-                onNext={skipToNext}
-                localStream={voice.localStream}
-                camOn={voice.camOn}
-                cinemaMode={cinema}
-                onToggleCinema={toggleCinema}
-              />
-            )
+      {!isMobile ? (
+        /* Desktop: draggable splitters between left / stage / right. The stage
+           always lives in the middle panel so it NEVER unmounts — cinema mode
+           just collapses the side panels via imperative handles. */
+        <ResizablePanelGroup direction="horizontal" className="flex-1">
+          <ResizablePanel
+            ref={leftPanelRef as never}
+            id="ordex-left"
+            order={1}
+            defaultSize={16}
+            minSize={10}
+            maxSize={30}
+            collapsible
+            collapsedSize={0}
+            className="overflow-hidden"
+          >
+            <LeftPanel activeCode={roomCode} />
+          </ResizablePanel>
+          <ResizableHandle
+            className={cn(
+              "w-1 bg-transparent transition-colors hover:bg-[var(--ordex-accent)]/40",
+              cinema && "pointer-events-none opacity-0",
+            )}
+            withHandle={!cinema}
+          />
+          <ResizablePanel id="ordex-center" order={2} defaultSize={59} minSize={35}>
+            {stage}
+          </ResizablePanel>
+          <ResizableHandle
+            className={cn(
+              "w-1 bg-transparent transition-colors hover:bg-[var(--ordex-accent)]/40",
+              cinema && "pointer-events-none opacity-0",
+            )}
+            withHandle={!cinema}
+          />
+          <ResizablePanel
+            ref={rightPanelRef as never}
+            id="ordex-right"
+            order={3}
+            defaultSize={25}
+            minSize={14}
+            maxSize={40}
+            collapsible
+            collapsedSize={0}
+            className="overflow-hidden"
+          >
+            {rightPanel}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      ) : (
+        <div className="min-w-0 flex-1 pb-16">
+          {mobileTab === "stage" ? (
+            stage
           ) : mobileTab === "chat" ? (
             <ChatPanel roomId={roomId} />
           ) : mobileTab === "voice" ? (
@@ -310,50 +394,33 @@ function RoomView({
               onLeaveVoice={voice.leave}
               onToggleMic={voice.toggleMic}
               onToggleCam={voice.toggleCam}
+              krisp={voice.krisp}
+              onToggleKrisp={() => void voice.toggleKrisp()}
+              getPeerVolume={voice.getPeerVolume}
+              setPeerVolume={voice.setPeerVolume}
             />
           ) : (
             <div className="ordex-panel h-full border-r border-white/5">
               <LeftPanel activeCode={roomCode} />
             </div>
-          )
-        ) : roomType === "gaming" ? (
-          <GamingStage
-            roomName={roomName}
-            roomCode={roomCode}
-            participants={voice.participants}
-            inVoice={voice.inVoice}
-            micOn={voice.micOn}
-            isSharing={voice.isSharing}
-            localStream={voice.localStream}
-            remoteStreams={voice.remoteStreams}
-            onJoinVoice={() => void voice.join()}
-            onLeaveVoice={voice.leave}
-            onToggleMic={voice.toggleMic}
-            onStartShare={voice.startScreenShare}
-            onStopShare={voice.stopScreenShare}
-            cinemaMode={cinema}
-            onToggleCinema={toggleCinema}
-          />
-        ) : (
-          <MediaPanel
-            roomName={roomName}
-            roomCode={roomCode}
-            sync={sync}
-            ytHostRef={ytHostRef}
-            videoRef={syncVideoRef}
-            onAddLink={addLink}
-            onNext={skipToNext}
-            localStream={voice.localStream}
-            camOn={voice.camOn}
-            cinemaMode={cinema}
-            onToggleCinema={toggleCinema}
-          />
-        )}
-      </div>
-
-      {!cinema && !isMobile && (
-        <div className="flex w-80 shrink-0 flex-col border-l border-white/5">{rightPanel}</div>
+          )}
+        </div>
       )}
+
+      {/* Always-visible Leave Room button (even in cinema mode) */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={leaveRoom}
+            className="fixed right-3 top-3 z-[60] flex h-9 items-center gap-1.5 rounded-full border border-red-500/30 bg-[color-mix(in_srgb,var(--ordex-panel-2)_82%,red_18%)] px-3 text-xs font-semibold text-red-300 shadow-lg transition-colors hover:border-red-500/60 hover:text-red-200"
+            title="Odadan çık — ana sayfaya dön"
+          >
+            <LogOut className="size-3.5" />
+            {!cinema && <span>Odadan çık</span>}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Odayı terk et ve ana sayfaya dön</TooltipContent>
+      </Tooltip>
 
       {isMobile && (
         <MobileNav

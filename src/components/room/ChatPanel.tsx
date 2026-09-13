@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/popover";
 import { badgeMeta } from "@/lib/profile";
 import { UserProfileCard, MentionText, openSocialView } from "@/components/social/SocialOverlay";
+import { Lightbox } from "@/components/Lightbox";
 
 const QUICK_EMOJIS = ["👍", "😂", "❤️", "🔥", "😮", "😢", "🎉", "👀"];
 
@@ -87,6 +88,7 @@ export function ChatPanel({ roomId }: { roomId: string }) {
   const [gifs, setGifs] = useState<Gif[]>([]);
   const [gifLoading, setGifLoading] = useState(false);
   const [gifError, setGifError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -249,8 +251,9 @@ export function ChatPanel({ roomId }: { roomId: string }) {
                   <img
                     src={m.gifThumb ?? m.gifUrl}
                     alt={m.text ?? "GIF"}
-                    className="mt-1 max-h-36 rounded-md border border-white/10"
+                    className="mt-1 max-h-36 cursor-zoom-in rounded-md border border-white/10 transition-transform hover:opacity-90"
                     loading="lazy"
+                    onClick={() => setLightbox(m.gifUrl ?? m.gifThumb ?? null)}
                   />
                 )}
                 {groups && (
@@ -377,6 +380,9 @@ export function ChatPanel({ roomId }: { roomId: string }) {
           <Send className="size-4" />
         </Button>
       </div>
+
+      {/* Full-screen image viewer (chat photo zoom) */}
+      {lightbox && <Lightbox src={lightbox} alt="Sohbet görseli" onClose={() => setLightbox(null)} />}
     </section>
   );
 }

@@ -129,7 +129,7 @@ export function GamingStage({
           muted
           playsInline
           className={cn(
-            "absolute right-3 top-14 z-10 h-24 w-40 rounded-md border border-white/20 bg-black object-contain shadow-lg",
+            "absolute right-3 top-24 z-10 h-24 w-40 rounded-md border border-white/20 bg-black object-contain shadow-lg",
             (!isSharing || !localStream) && "hidden",
           )}
         />
@@ -154,8 +154,8 @@ export function GamingStage({
           </span>
         )}
 
-        {/* Stage overlay buttons */}
-        <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5">
+        {/* Stage overlay buttons (below the fixed Leave Room chip) */}
+        <div className="absolute right-3 top-14 z-20 flex items-center gap-1.5">
           <Button
             size="icon"
             variant="secondary"

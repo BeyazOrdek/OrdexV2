@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/popover";
 import { badgeMeta } from "@/lib/profile";
 import { readImageFile } from "@/lib/profile";
+import { Lightbox } from "@/components/Lightbox";
 
 // ---------- shared tiny bits ----------
 
@@ -450,6 +451,7 @@ function DmView({
   const [showGifs, setShowGifs] = useState(false);
   const [gifs, setGifs] = useState<{ id: string; url: string; preview: string; desc: string }[]>([]);
   const [gifLoading, setGifLoading] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -592,7 +594,15 @@ function DmView({
               )}
             >
               {m.text && <MentionText text={m.text} selfName={user?.name ?? undefined} />}
-              {m.gifUrl && <img src={m.gifThumb ?? m.gifUrl} alt="Medya" className="mt-1 max-h-36 rounded-md" loading="lazy" />}
+              {m.gifUrl && (
+                <img
+                  src={m.gifThumb ?? m.gifUrl}
+                  alt="Medya"
+                  className="mt-1 max-h-36 cursor-zoom-in rounded-md transition-transform hover:opacity-90"
+                  loading="lazy"
+                  onClick={() => setLightbox(m.gifUrl ?? m.gifThumb ?? null)}
+                />
+              )}
             </div>
             <span className="mt-0.5 flex items-center gap-1.5 px-1 text-[9px] text-zinc-600">
               {formatStamp(m.createdAt)}
@@ -737,6 +747,9 @@ function DmView({
           <Send className="size-4" />
         </Button>
       </div>
+
+      {/* Full-screen image viewer (chat photo zoom) */}
+      {lightbox && <Lightbox src={lightbox} alt="Sohbet görseli" onClose={() => setLightbox(null)} />}
     </div>
   );
 }
@@ -771,6 +784,7 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
   const [showGifs, setShowGifs] = useState(false);
   const [gifs, setGifs] = useState<{ id: string; url: string; preview: string; desc: string }[]>([]);
   const [gifLoading, setGifLoading] = useState(false);
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -947,7 +961,15 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
               )}
             >
               {m.text && <MentionText text={m.text} selfName={user?.name ?? undefined} />}
-              {m.gifUrl && <img src={m.gifThumb ?? m.gifUrl} alt="Medya" className="mt-1 max-h-36 rounded-md" loading="lazy" />}
+              {m.gifUrl && (
+                <img
+                  src={m.gifThumb ?? m.gifUrl}
+                  alt="Medya"
+                  className="mt-1 max-h-36 cursor-zoom-in rounded-md transition-transform hover:opacity-90"
+                  loading="lazy"
+                  onClick={() => setLightbox(m.gifUrl ?? m.gifThumb ?? null)}
+                />
+              )}
             </div>
             <span className="mt-0.5 flex items-center gap-1.5 px-1 text-[9px] text-zinc-600">
               {formatStamp(m.createdAt)}
@@ -1092,6 +1114,9 @@ function GroupChatView({ groupId, onBack }: { groupId: Id<"groups">; onBack: () 
           <Send className="size-4" />
         </Button>
       </div>
+
+      {/* Full-screen image viewer (chat photo zoom) */}
+      {lightbox && <Lightbox src={lightbox} alt="Sohbet görseli" onClose={() => setLightbox(null)} />}
     </div>
   );
 }

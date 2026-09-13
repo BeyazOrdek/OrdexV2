@@ -421,3 +421,19 @@
   width: 100%;
   height: 100%;
 }
+
+/* ============================================================
+   ÖRDEX HD Boost — MP4 upscale/sharpen filter. Applied to the
+   direct <video> element when the media-bar toggle is on: crisper
+   edges + a gentle color pop for low-resolution sources.
+   ============================================================ */
+.ordex-hdboost {
+  image-rendering: crisp-edges;
+  filter: contrast(1.05) saturate(1.1) brightness(1.02);
+}
+
+@supports (image-rendering: pixelated) {
+  .ordex-hdboost {
+    image-rendering: pixelated;
+  }
+}

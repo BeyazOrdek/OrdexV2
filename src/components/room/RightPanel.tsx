@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { initials, parseMediaLink, thumbFor } from "@/lib/utils-room";
 import { useMutation, useQuery } from "convex/react";
 import {
+  AudioLines,
   Headphones,
   Link2,
   ListVideo,
@@ -18,10 +19,20 @@ import {
   Video,
   VideoOff,
   Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { endActiveCall, useCallState } from "@/components/social/SocialOverlay";
 
 interface RightPanelProps {
@@ -37,6 +48,12 @@ interface RightPanelProps {
   onLeaveVoice: () => void;
   onToggleMic: () => void;
   onToggleCam: () => void;
+  /** Krisp-style noise suppression (persisted). */
+  krisp: boolean;
+  onToggleKrisp: () => void;
+  /** Local per-peer volume (0–200 %) — context-menu mixer. */
+  getPeerVolume: (sessionId: string) => number;
+  setPeerVolume: (sessionId: string, volume: number) => void;
 }
 
 export function RightPanel({
@@ -52,6 +69,10 @@ export function RightPanel({
   onLeaveVoice,
   onToggleMic,
   onToggleCam,
+  krisp,
+  onToggleKrisp,
+  getPeerVolume,
+  setPeerVolume,
 }: RightPanelProps) {
   const { user } = useAuth();
   const queue = useQuery(api.rooms.listQueue, { roomId: roomId as never }) ?? [];
@@ -180,30 +201,69 @@ export function RightPanel({
             </p>
           )}
           {voiceParticipants.map((p) => (
-            <div
-              key={p.sessionId}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors",
-                p.speaking ? "bg-emerald-500/10" : "bg-transparent",
+            <ContextMenu key={p.sessionId}>
+              <ContextMenuTrigger asChild>
+                <div
+                  className={cn(
+                    "flex cursor-context-menu items-center gap-2 rounded-md px-2 py-1.5 transition-colors",
+                    p.speaking ? "bg-emerald-500/10" : "bg-transparent",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ring-2 transition-shadow",
+                      p.speaking ? "ring-emerald-400" : "ring-transparent",
+                    )}
+                    style={{ background: `hsl(${p.avatarHue} 65% 45%)` }}
+                  >
+                    {initials(p.userName)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-zinc-300">
+                    {p.userName}
+                    {p.isSelf && <span className="text-zinc-600"> (sen)</span>}
+                  </span>
+                  {!p.micOn && <MicOff className="size-3.5 shrink-0 text-red-400" />}
+                  {!p.camOn && <VideoOff className="size-3.5 shrink-0 text-zinc-500" />}
+                  {p.camOn && !p.isSelf && <Video className="size-3.5 shrink-0 text-emerald-400" />}
+                  {!p.isSelf && getPeerVolume(p.sessionId) <= 0 && (
+                    <VolumeX className="size-3.5 shrink-0 text-red-400" />
+                  )}
+                </div>
+              </ContextMenuTrigger>
+              {!p.isSelf && (
+                <ContextMenuContent className="ordex-panel-2 w-56 border-white/10">
+                  <ContextMenuLabel className="text-xs text-zinc-400">
+                    {p.userName} — kullanıcı sesi
+                  </ContextMenuLabel>
+                  <div className="px-2 pb-1.5 pt-1">
+                    <Slider
+                      value={[Math.round(getPeerVolume(p.sessionId) * 100)]}
+                      min={0}
+                      max={200}
+                      step={5}
+                      onValueChange={([v]) => setPeerVolume(p.sessionId, v / 100)}
+                      className="cursor-pointer [&_[data-slot=slider-range]]:bg-emerald-400 [&_[data-slot=slider-thumb]]:border-emerald-400"
+                    />
+                    <p className="mt-1 text-center text-[10px] text-zinc-500">
+                      %{Math.round(getPeerVolume(p.sessionId) * 100)}
+                    </p>
+                  </div>
+                  <ContextMenuSeparator className="bg-white/10" />
+                  <ContextMenuItem
+                    className="text-xs focus:bg-white/10"
+                    onSelect={() => setPeerVolume(p.sessionId, 1)}
+                  >
+                    <Volume2 className="size-3.5" /> Varsayılan (%100)
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    className="text-xs focus:bg-white/10"
+                    onSelect={() => setPeerVolume(p.sessionId, 0)}
+                  >
+                    <VolumeX className="size-3.5" /> Yerel olarak sustur (%0)
+                  </ContextMenuItem>
+                </ContextMenuContent>
               )}
-            >
-              <span
-                className={cn(
-                  "flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ring-2 transition-shadow",
-                  p.speaking ? "ring-emerald-400" : "ring-transparent",
-                )}
-                style={{ background: `hsl(${p.avatarHue} 65% 45%)` }}
-              >
-                {initials(p.userName)}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-zinc-300">
-                {p.userName}
-                {p.isSelf && <span className="text-zinc-600"> (sen)</span>}
-              </span>
-              {!p.micOn && <MicOff className="size-3.5 shrink-0 text-red-400" />}
-              {!p.camOn && <VideoOff className="size-3.5 shrink-0 text-zinc-500" />}
-              {p.camOn && !p.isSelf && <Video className="size-3.5 shrink-0 text-emerald-400" />}
-            </div>
+            </ContextMenu>
           ))}
         </div>
 
@@ -236,7 +296,17 @@ export function RightPanel({
       {/* Voice controls — synced with 1:1 calls: while a call rings or runs,
           the join button swaps for an end-call card so the two bottom panels
           can never fight for the same mic/UI state. */}
-      <VoiceFooter inVoice={inVoice} micOn={micOn} camOn={camOn} onJoinVoice={onJoinVoice} onLeaveVoice={onLeaveVoice} onToggleMic={onToggleMic} onToggleCam={onToggleCam} />
+      <VoiceFooter
+        inVoice={inVoice}
+        micOn={micOn}
+        camOn={camOn}
+        krisp={krisp}
+        onToggleKrisp={onToggleKrisp}
+        onJoinVoice={onJoinVoice}
+        onLeaveVoice={onLeaveVoice}
+        onToggleMic={onToggleMic}
+        onToggleCam={onToggleCam}
+      />
       <p className="-mt-1 pb-2 text-center text-[10px] text-zinc-600">
         {user?.name ?? "Misafir"} olarak bağlısın
       </p>
@@ -254,13 +324,23 @@ function VoiceFooter({
   inVoice,
   micOn,
   camOn,
+  krisp,
+  onToggleKrisp,
   onJoinVoice,
   onLeaveVoice,
   onToggleMic,
   onToggleCam,
 }: Pick<
   RightPanelProps,
-  "inVoice" | "micOn" | "camOn" | "onJoinVoice" | "onLeaveVoice" | "onToggleMic" | "onToggleCam"
+  | "inVoice"
+  | "micOn"
+  | "camOn"
+  | "krisp"
+  | "onToggleKrisp"
+  | "onJoinVoice"
+  | "onLeaveVoice"
+  | "onToggleMic"
+  | "onToggleCam"
 >) {
   const call = useCallState();
 
@@ -300,32 +380,67 @@ function VoiceFooter({
   return (
     <div className="border-t border-white/5 bg-[var(--ordex-panel-2)] p-3">
       {inVoice ? (
-        <div className="flex items-center gap-2">
-          <Button
-            size="icon"
-            variant={micOn ? "secondary" : "destructive"}
-            className="size-9 shrink-0"
-            title={micOn ? "Mikrofonu kapat" : "Mikrofonu aç"}
-            onClick={onToggleMic}
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon"
+              variant={micOn ? "secondary" : "destructive"}
+              className="size-9 shrink-0"
+              title={micOn ? "Mikrofonu kapat" : "Mikrofonu aç"}
+              onClick={onToggleMic}
+            >
+              {micOn ? <Mic className="size-4" /> : <MicOff className="size-4" />}
+            </Button>
+            <Button
+              size="icon"
+              variant={camOn ? "secondary" : "destructive"}
+              className="size-9 shrink-0"
+              title={camOn ? "Kamerayı kapat" : "Kamerayı aç"}
+              onClick={onToggleCam}
+            >
+              {camOn ? <Video className="size-4" /> : <VideoOff className="size-4" />}
+            </Button>
+            <Button
+              onClick={onLeaveVoice}
+              variant="destructive"
+              className="h-9 flex-1 text-xs"
+            >
+              Kanaldan ayrıl
+            </Button>
+          </div>
+          {/* Krisp-style noise suppression toggle */}
+          <button
+            type="button"
+            onClick={onToggleKrisp}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-[11px] transition-colors",
+              krisp
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15"
+                : "border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10",
+            )}
+            title="Krisp tarzı gürültü engelleme: yankı + ortam sesi filtreleri"
           >
-            {micOn ? <Mic className="size-4" /> : <MicOff className="size-4" />}
-          </Button>
-          <Button
-            size="icon"
-            variant={camOn ? "secondary" : "destructive"}
-            className="size-9 shrink-0"
-            title={camOn ? "Kamerayı kapat" : "Kamerayı aç"}
-            onClick={onToggleCam}
-          >
-            {camOn ? <Video className="size-4" /> : <VideoOff className="size-4" />}
-          </Button>
-          <Button
-            onClick={onLeaveVoice}
-            variant="destructive"
-            className="h-9 flex-1 text-xs"
-          >
-            Kanaldan ayrıl
-          </Button>
+            <AudioLines className={cn("size-3.5 shrink-0", krisp && "text-emerald-400")} />
+            <span className="min-w-0 flex-1 leading-tight">
+              Krisp Gürültü Engelleme
+              <span className="block text-[9px] text-zinc-500">
+                {krisp ? "Açık — yankı ve gürültü filtreleniyor" : "Kapalı — ham mikrofon"}
+              </span>
+            </span>
+            <span
+              className={cn(
+                "flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors",
+                krisp ? "bg-emerald-500" : "bg-zinc-600",
+              )}
+            >
+              <span
+                className={cn(
+                  "size-3 rounded-full bg-white transition-transform",
+                  krisp && "translate-x-3",
+                )}
+              />
+            </span>
+          </button>
         </div>
       ) : (
         <Button

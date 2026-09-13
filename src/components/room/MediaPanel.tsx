@@ -1,6 +1,7 @@
 import type { MediaSync } from "@/hooks/use-media-sync";
 import { cn } from "@/lib/utils";
 import { formatTime, parseMediaLink, type ParsedMediaLink } from "@/lib/utils-room";
+import { hdBoostEnabled, setHdBoostPref } from "@/lib/prefs";
 import {
   Link2,
   Loader2,
@@ -13,6 +14,7 @@ import {
   Play,
   Radio,
   SkipForward,
+  Sparkles,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -54,8 +56,17 @@ export function MediaPanel({
   const [link, setLink] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // MP4 upscale/sharpen toggle (persisted per browser).
+  const [hdBoost, setHdBoost] = useState(() => hdBoostEnabled());
   const parsed = link.trim() ? parseMediaLink(link) : null;
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
+
+  const toggleHdBoost = () => {
+    setHdBoost((v) => {
+      setHdBoostPref(!v);
+      return !v;
+    });
+  };
 
   // Fullscreen state sync (e.g. user exits with Esc).
   useEffect(() => {
@@ -133,6 +144,7 @@ export function MediaPanel({
             className={cn(
               "absolute inset-0 size-full bg-black object-contain",
               !isDirect && "invisible",
+              isDirect && hdBoost && "ordex-hdboost",
             )}
           />
           {!sync.hasVideo && (
@@ -160,7 +172,7 @@ export function MediaPanel({
             muted
             playsInline
             className={cn(
-              "absolute right-3 top-14 z-10 h-24 w-32 rounded-md border border-white/20 bg-black object-cover shadow-lg",
+              "absolute right-3 top-24 z-10 h-24 w-32 rounded-md border border-white/20 bg-black object-cover shadow-lg",
               !camOn && "hidden",
             )}
           />
@@ -173,8 +185,9 @@ export function MediaPanel({
           </span>
         )}
 
-        {/* Stage overlay buttons: cinema toggle + fullscreen */}
-        <div className="absolute right-3 top-3 z-20 flex items-center gap-1.5">
+        {/* Stage overlay buttons: cinema toggle + fullscreen (below the fixed
+            Leave Room chip in the top-right corner) */}
+        <div className="absolute right-3 top-14 z-20 flex items-center gap-1.5">
           <Button
             size="icon"
             variant="secondary"
@@ -243,6 +256,22 @@ export function MediaPanel({
               onClick={sync.toggleMute}
             >
               {sync.muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+            </Button>
+            {/* MP4 HD Boost: sharpen + color pop for low-res direct videos */}
+            <Button
+              size="icon"
+              variant="secondary"
+              className={cn(
+                "size-9 shrink-0",
+                hdBoost
+                  ? "bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)]"
+                  : "bg-white/10 text-zinc-200 hover:bg-white/15",
+              )}
+              title={hdBoost ? "HD Boost açık (720p→1080p netleştirme)" : "HD Boost: MP4 netliğini artır"}
+              aria-pressed={hdBoost}
+              onClick={toggleHdBoost}
+            >
+              <Sparkles className="size-4" />
             </Button>
           </div>
           <Slider

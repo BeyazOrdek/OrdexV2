@@ -2,11 +2,19 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { krispEnabled } from "@/lib/prefs";
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
 ];
+
+/** Krisp-style mic chain: echo cancellation + noise suppression + AGC. */
+function micConstraints(krisp: boolean): MediaTrackConstraints {
+  return krisp
+    ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+    : { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+}
 
 interface Peer {
   sessionId: string;
@@ -59,6 +67,12 @@ export interface VoiceApi {
   toggleCam: () => void;
   startScreenShare: () => void;
   stopScreenShare: () => void;
+  /** Krisp-style noise suppression toggle (persists, re-opens the mic). */
+  krisp: boolean;
+  toggleKrisp: () => Promise<void>;
+  /** Local per-user gain 0–2 (1 = %100, 2 = %200). */
+  getPeerVolume: (sessionId: string) => number;
+  setPeerVolume: (sessionId: string, volume: number) => void;
 }
 
 /** Perfect-negotiation polite flag: lexicographically smaller session is polite. */
@@ -109,6 +123,13 @@ export function useVoice({
   const inVoiceRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const cameraAcquiringRef = useRef(false);
+  // Per-peer local volume (0–2) applied via the <audio> element. Web Audio
+  // gain nodes per remote stream would fight the autoplay guard; element
+  // volume is instant, survives stream swaps and costs nothing.
+  const peerVolumeRef = useRef<Map<string, number>>(new Map());
+  const [, bumpPeerVolumes] = useState(0); // re-render so UI sliders stay in sync
+  // Reactive mirror of the Krisp pref so toggle buttons update instantly.
+  const [krispState, setKrispState] = useState(() => krispEnabled());
   // Screen / game broadcast state (gaming rooms).
   const [isSharing, setIsSharing] = useState(false);
   const shareStreamRef = useRef<MediaStream | null>(null);
@@ -262,6 +283,10 @@ export function useVoice({
               return next;
             });
           }
+          // Apply the user's local per-peer volume (default %100).
+          const vol = peerVolumeRef.current.get(remoteSession) ?? 1;
+          audioEl.volume = Math.min(1, Math.max(0, vol));
+          audioEl.muted = vol <= 0;
           playWithAutoplayGuard(audioEl);
         }
       };
@@ -439,11 +464,11 @@ export function useVoice({
     if (inVoiceRef.current) return;
     setError(null);
     try {
-      // Voice-first join: mic with echo cancellation / noise suppression / AGC.
+      // Voice-first join: mic with the persisted Krisp-style constraint set.
       // Video is requested lazily via the camera toggle, so permission dialog
       // and channel latency stay minimal.
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: micConstraints(krispEnabled()),
         video: false,
       });
       localStreamRef.current = stream;
@@ -525,7 +550,7 @@ export function useVoice({
     if (!localStreamRef.current) {
       try {
         const mic = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          audio: micConstraints(krispEnabled()),
         });
         localStreamRef.current = mic;
         setLocalStream(mic);
@@ -606,7 +631,7 @@ export function useVoice({
       if (!stream) {
         // Not in voice: behave like a voice join with camera.
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          audio: micConstraints(krispEnabled()),
           video: { width: { ideal: 640 }, height: { ideal: 480 } },
         });
         localStreamRef.current = stream;
@@ -652,6 +677,71 @@ export function useVoice({
     }
   }, [attachSpeakingMonitor, negotiate]);
 
+  /** Toggle Krisp-style processing: reopen the mic with new constraints. */
+  const toggleKrisp = useCallback(async () => {
+    const next = !krispEnabled();
+    try {
+      localStorage.setItem("ordex:krisp", next ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+    setKrispState(next);
+    // Re-acquire the mic with the new constraint set. If we're not in voice
+    // yet, the next join() picks it up — never open the mic preemptively
+    // (that would trigger a surprise permission prompt).
+    if (!inVoiceRef.current || !localStreamRef.current) return;
+    const wasMuted = !micOnRef.current;
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(next), video: false });
+      const old = localStreamRef.current;
+      if (old) {
+        for (const t of old.getTracks()) t.stop();
+      }
+      if (wasMuted) {
+        for (const t of fresh.getAudioTracks()) t.enabled = false;
+      }
+      localStreamRef.current = fresh;
+      setLocalStream(fresh);
+      // Re-arm the speaking monitor on the new stream (the old AudioContext
+      // still reads the dead stream otherwise).
+      const oldCtx = audioCtxRef.current;
+      if (oldCtx) {
+        void oldCtx.close().catch(() => undefined);
+        audioCtxRef.current = null;
+      }
+      attachSpeakingMonitor(fresh);
+      // Swap the outgoing audio track on every live peer — no renegotiation.
+      for (const peer of peersRef.current.values()) {
+        const sender = peer.pc.getSenders().find((s) => s.track?.kind === "audio");
+        if (sender) {
+          await sender.replaceTrack(fresh.getAudioTracks()[0]).catch(() => undefined);
+        } else {
+          for (const t of fresh.getTracks()) peer.pc.addTrack(t, fresh);
+        }
+      }
+    } catch {
+      // Permission hiccup: keep the old stream, surface nothing fatal.
+    }
+  }, [attachSpeakingMonitor]);
+
+  const getPeerVolume = useCallback(
+    (sid: string) => peerVolumeRef.current.get(sid) ?? 1,
+    [],
+  );
+
+  const setPeerVolume = useCallback((sid: string, volume: number) => {
+    const clamped = Math.min(2, Math.max(0, volume));
+    peerVolumeRef.current.set(sid, clamped);
+    const peer = peersRef.current.get(sid);
+    if (peer?.audioEl) {
+      // Element volume caps at 1; >1 keeps full element volume (browser limit)
+      // and the UI slider still reflects the 0–200 range.
+      peer.audioEl.volume = Math.min(1, clamped);
+      peer.audioEl.muted = clamped <= 0;
+    }
+    bumpPeerVolumes((v) => v + 1);
+  }, []);
+
   useEffect(() => () => leave(), [leave]);
 
   const participants: VoiceParticipant[] = voiceSessions.map((v) => ({
@@ -675,5 +765,9 @@ export function useVoice({
     toggleCam: () => void toggleCam(),
     startScreenShare: () => void startScreenShare(),
     stopScreenShare,
+    krisp: krispState,
+    toggleKrisp,
+    getPeerVolume,
+    setPeerVolume,
   };
 }
