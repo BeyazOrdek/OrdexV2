@@ -357,6 +357,12 @@ export function useMediaSync({
       }
       playerRef.current = null;
       ytReadyRef.current = false;
+      // Reset the readiness STATE too: if the host re-attaches later (tab
+      // switches), the new player must flip it false→true again so the
+      // apply-state effect re-runs and loads the current video into it.
+      setYtReady(false);
+      setPlaying(false);
+      setBuffering(false);
       // Remove ONLY the disposable mount node this effect created. React owns
       // the host div and all its siblings; wiping the host (or the stage)
       // would tear tracked nodes out of the live DOM and crash the next
@@ -367,8 +373,10 @@ export function useMediaSync({
         /* already gone */
       }
     };
+    // ytHostVersion: re-run when the host node (re)attaches — otherwise the
+    // player would stay bound to a detached div after mobile tab switches.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ytHostVersion]);
 
   // ---- Handoff between engines: never let two sources play at once ----
   useEffect(() => {
@@ -571,48 +579,80 @@ export function useMediaSync({
   const play = useCallback(() => {
     if (mediaType === "direct") {
       const video = videoRef.current;
-      if (!video || !video.dataset.src) return;
-      playWithAutoplayGuard(video);
+      if (video?.dataset.src) {
+        playWithAutoplayGuard(video);
+      } else if (mediaKeyRef.current) {
+        // Stage not mounted (mobile tab switch): record the play intent —
+        // the apply effect resumes playback when the panel is back.
+        publish(mediaKeyRef.current, "direct", state?.mediaUrl, true, video?.currentTime ?? state?.positionSec ?? 0, true);
+      }
       return;
     }
     const player = playerRef.current;
-    if (!player || !ytReadyRef.current || !state?.currentVideoId) return;
+    if (!player || !ytReadyRef.current) {
+      // Player still warming up: publish the intent so playback starts the
+      // moment onReady fires (the apply effect listens on ytReady).
+      if (state?.currentVideoId) {
+        publish(state.currentVideoId, "youtube", undefined, true, player?.getCurrentTime?.() ?? state.positionSec, true);
+      }
+      return;
+    }
     player.playVideo();
     publish(player.getVideoData().video_id, "youtube", undefined, true, player.getCurrentTime(), true);
-  }, [mediaType, publish, state?.currentVideoId, videoRef]);
+  }, [mediaType, publish, state?.currentVideoId, state?.positionSec, state?.mediaUrl, videoRef]);
 
   const pause = useCallback(() => {
     if (mediaType === "direct") {
       const video = videoRef.current;
-      if (!video) return;
-      video.pause();
+      video?.pause();
+      if (mediaKeyRef.current && !video?.dataset.src) {
+        publish(mediaKeyRef.current, "direct", state?.mediaUrl, false, video?.currentTime ?? state?.positionSec ?? 0, true);
+      }
       return;
     }
     const player = playerRef.current;
-    if (!player || !ytReadyRef.current || !state?.currentVideoId) return;
+    if (!player || !ytReadyRef.current) {
+      if (state?.currentVideoId) {
+        publish(state.currentVideoId, "youtube", undefined, false, player?.getCurrentTime?.() ?? state.positionSec, true);
+      }
+      return;
+    }
     player.pauseVideo();
     publish(player.getVideoData().video_id, "youtube", undefined, false, player.getCurrentTime(), true);
-  }, [mediaType, publish, state?.currentVideoId, videoRef]);
+  }, [mediaType, publish, state?.currentVideoId, state?.positionSec, state?.mediaUrl, videoRef]);
 
   const seek = useCallback(
     (seconds: number) => {
       if (mediaType === "direct") {
         const video = videoRef.current;
-        if (!video || !video.dataset.src) return;
+        if (!video || !video.dataset.src) {
+          // Stage not mounted: still record the seek so the position sticks.
+          if (mediaKeyRef.current) {
+            setCurrentTime(seconds);
+            publish(mediaKeyRef.current, "direct", state?.mediaUrl, state?.isPlaying ?? false, seconds, true);
+          }
+          return;
+        }
         seekWhenReady(video, seconds);
         setCurrentTime(seconds);
         publish(mediaKeyRef.current!, "direct", video.dataset.src, !video.paused, seconds, true);
         return;
       }
       const player = playerRef.current;
-      if (!player || !ytReadyRef.current || !state?.currentVideoId) return;
+      if (!player || !ytReadyRef.current || !state?.currentVideoId) {
+        if (state?.currentVideoId) {
+          setCurrentTime(seconds);
+          publish(state.currentVideoId, "youtube", undefined, state?.isPlaying ?? false, seconds, true);
+        }
+        return;
+      }
       player.seekTo(seconds, true);
       const wasPlaying = player.getPlayerState() === 1;
       if (wasPlaying) player.playVideo();
       setCurrentTime(seconds);
       publish(player.getVideoData().video_id, "youtube", undefined, wasPlaying, seconds, true);
     },
-    [mediaType, publish, state?.currentVideoId, videoRef],
+    [mediaType, publish, state?.currentVideoId, state?.positionSec, state?.mediaUrl, state?.isPlaying, videoRef],
   );
 
   const setVolume = useCallback((v: number) => {

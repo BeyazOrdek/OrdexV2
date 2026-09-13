@@ -230,11 +230,14 @@ export function MediaPanel({
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <div className="flex shrink-0 items-center gap-1.5">
+            {/* Play/Pause is never disabled while any media exists — clicking
+                during player warm-up publishes the play intent instead of
+                silently doing nothing. */}
             <Button
               size="icon"
               className="size-9 shrink-0 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)] disabled:opacity-40"
               title={sync.playing ? "Duraklat" : "Oynat"}
-              disabled={!sync.hasVideo || !sync.ready}
+              disabled={!sync.hasVideo}
               onClick={() => (sync.playing ? sync.pause() : sync.play())}
             >
               {sync.playing ? <Pause className="size-4" /> : <Play className="size-4" />}
@@ -244,6 +247,7 @@ export function MediaPanel({
               variant="secondary"
               className="size-9 shrink-0 bg-white/10 text-zinc-200 hover:bg-white/15"
               title="Sıradaki videoya geç"
+              disabled={!sync.hasVideo}
               onClick={onNext}
             >
               <SkipForward className="size-4" />
