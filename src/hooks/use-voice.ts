@@ -143,6 +143,104 @@ function remoteAudioRoot(): HTMLElement {
   return root;
 }
 
+/**
+ * 🔊 Live Web Audio amplification chain for one remote peer.
+ * `HTMLMediaElement.volume` hard-caps at 1.0 — that's why the %0–200 slider
+ * silently did nothing above %100. For values above 1 the remote stream is
+ * routed source → GainNode → destination, and the (muted) element stays wired
+ * to the stream purely as a keep-alive.
+ */
+interface PeerGainChain {
+  ctx: AudioContext;
+  source: MediaStreamAudioSourceNode;
+  gain: GainNode;
+}
+
+function releaseGainChain(audioEl: HTMLAudioElement, chains: Map<HTMLAudioElement, PeerGainChain>): void {
+  const chain = chains.get(audioEl);
+  if (!chain) return;
+  try {
+    chain.source.disconnect();
+  } catch {
+    /* already disconnected */
+  }
+  try {
+    chain.gain.disconnect();
+  } catch {
+    /* already disconnected */
+  }
+  try {
+    void chain.ctx.close().catch(() => undefined);
+  } catch {
+    /* already closed */
+  }
+  chains.delete(audioEl);
+}
+
+function applyPeerVolume(
+  audioEl: HTMLAudioElement,
+  stream: MediaStream,
+  volume: number,
+  chains: Map<HTMLAudioElement, PeerGainChain>,
+): void {
+  const clamped = Math.min(2, Math.max(0, volume));
+  // Always start clean: any previous amplified path is torn down so the
+  // element is back on the raw stream before deciding the new route.
+  releaseGainChain(audioEl, chains);
+  if (audioEl.srcObject !== stream) audioEl.srcObject = stream;
+  if (clamped <= 1) {
+    // Direct path: the element handles 0–100% natively.
+    audioEl.volume = clamped;
+    audioEl.muted = clamped <= 0;
+    return;
+  }
+  const Ctor = window.AudioContext;
+  if (!Ctor) {
+    // No Web Audio (should not happen in real browsers): degrade to max.
+    audioEl.volume = 1;
+    audioEl.muted = false;
+    return;
+  }
+  try {
+    const ctx = new Ctor();
+    if (ctx.state === "suspended") void ctx.resume().catch(() => undefined);
+    const source = ctx.createMediaStreamSource(stream);
+    const gain = ctx.createGain();
+    gain.gain.value = clamped;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    chains.set(audioEl, { ctx, source, gain });
+    // The element plays muted; Web Audio owns the audible output. If the
+    // context never leaves "suspended" (autoplay policy without a gesture),
+    // finishPeerVolume degrades to full element volume — never silence.
+    void Promise.resolve()
+      .then(() => (ctx.state === "suspended" ? ctx.resume() : undefined))
+      .catch(() => undefined)
+      .then(() => {
+        // Stale-apply guard: a newer slider move may have replaced this chain.
+        if (chains.get(audioEl) !== ctxChainRef(ctx, chains)) return;
+        if (ctx.state === "running") {
+          audioEl.volume = 1;
+          audioEl.muted = true;
+        } else {
+          releaseGainChain(audioEl, chains);
+          audioEl.volume = 1;
+          audioEl.muted = false;
+        }
+      });
+  } catch {
+    // Chain creation failed — degrade to max element volume.
+    audioEl.volume = 1;
+    audioEl.muted = false;
+  }
+}
+
+/** Lookup helper for the stale-apply guard above. */
+function ctxChainRef(ctx: AudioContext, chains: Map<HTMLAudioElement, PeerGainChain>): PeerGainChain | undefined {
+  for (const chain of chains.values()) if (chain.ctx === ctx) return chain;
+  return undefined;
+}
+
 export function useVoice({
   roomId,
   sessionId,
@@ -174,6 +272,8 @@ export function useVoice({
   // gain nodes per remote stream would fight the autoplay guard; element
   // volume is instant, survives stream swaps and costs nothing.
   const peerVolumeRef = useRef<Map<string, number>>(new Map());
+  /** Live amplification chains keyed by the remote <audio> element. */
+  const gainChainsRef = useRef<Map<HTMLAudioElement, PeerGainChain>>(new Map());
   const [, bumpPeerVolumes] = useState(0); // re-render so UI sliders stay in sync
   // Reactive mirror of the Krisp pref so toggle buttons update instantly.
   const [krispState, setKrispState] = useState(() => krispEnabled());
@@ -409,10 +509,11 @@ export function useVoice({
               return next;
             });
           }
-          // Apply the user's local per-peer volume (default %100).
+          // Apply the user's local per-peer volume (default %100). Values
+          // above %100 route through a Web Audio gain chain (element volume
+          // hard-caps at 1.0 — see applyPeerVolume).
           const vol = peerVolumeRef.current.get(remoteSession) ?? 1;
-          audioEl.volume = Math.min(1, Math.max(0, vol));
-          audioEl.muted = vol <= 0;
+          applyPeerVolume(audioEl, remoteStream, vol, gainChainsRef.current);
           playWithAutoplayGuard(audioEl);
         }
       };
@@ -490,6 +591,7 @@ export function useVoice({
     }
     // Remove the remote <audio> element so its sound fully stops.
     if (peer.audioEl) {
+      releaseGainChain(peer.audioEl, gainChainsRef.current);
       peer.audioEl.srcObject = null;
       peer.audioEl.remove();
     }
@@ -712,6 +814,10 @@ export function useVoice({
     localStreamRef.current = null;
     setLocalStream(null);
     setRemoteStreams(new Map());
+    // Tear down any surviving amplification chains.
+    for (const el of Array.from(gainChainsRef.current.keys())) {
+      releaseGainChain(el, gainChainsRef.current);
+    }
     cameraAcquiringRef.current = false;
     const ctx = audioCtxRef.current;
     if (ctx) {
@@ -868,11 +974,11 @@ export function useVoice({
     const clamped = Math.min(2, Math.max(0, volume));
     peerVolumeRef.current.set(sid, clamped);
     const peer = peersRef.current.get(sid);
-    if (peer?.audioEl) {
-      // Element volume caps at 1; >1 keeps full element volume (browser limit)
-      // and the UI slider still reflects the 0–200 range.
-      peer.audioEl.volume = Math.min(1, clamped);
-      peer.audioEl.muted = clamped <= 0;
+    const el = peer?.audioEl;
+    if (el && el.srcObject instanceof MediaStream) {
+      // >100% now genuinely amplifies via Web Audio; ≤100% uses the element.
+      applyPeerVolume(el, el.srcObject, clamped, gainChainsRef.current);
+      void el.play().catch(() => undefined);
     }
     bumpPeerVolumes((v) => v + 1);
   }, []);
