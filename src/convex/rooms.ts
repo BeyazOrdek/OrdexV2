@@ -79,6 +79,51 @@ export const listPublicRooms = query({
   },
 });
 
+/**
+ * Dashboard room-card rows: every non-secret room with its LIVE member count
+ * (memberships) and activity flags (occupants in voice / anyone broadcasting
+ * / a video on the stage). Powers the center-panel room grid — one reactive
+ * query instead of N+1 lookups from the client.
+ */
+export const listRoomCards = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    const rooms = (await ctx.db.query("rooms").order("desc").take(50)).filter(
+      (r) => (r.visibility ?? "public") !== SECRET_VISIBILITY,
+    );
+    return await Promise.all(
+      rooms.slice(0, 30).map(async (room) => {
+        const [members, occupants] = await Promise.all([
+          ctx.db
+            .query("memberships")
+            .withIndex("by_room_user", (q) => q.eq("roomId", room._id))
+            .collect(),
+          ctx.db
+            .query("presence")
+            .withIndex("by_room", (q) => q.eq("roomId", room._id))
+            .collect(),
+        ]);
+        const now = Date.now();
+        const fresh = occupants.filter((p) => now - p.lastSeen < 35_000);
+        return {
+          _id: room._id,
+          code: room.code,
+          name: room.name,
+          createdBy: room.createdByName,
+          createdAt: room.createdAt,
+          isMine: userId !== null && members.some((m) => m.userId === userId),
+          memberCount: members.length,
+          onlineCount: fresh.length,
+          voiceCount: fresh.filter((p) => p.inVoice).length,
+          isLive: fresh.some((p) => p.isSharing === true),
+          isPlaying: Boolean(room.currentVideoId) && room.isPlaying === true,
+        };
+      }),
+    );
+  },
+});
+
 // ---------- Room lifecycle ----------
 
 export const createRoom = mutation({

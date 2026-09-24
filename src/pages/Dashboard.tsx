@@ -10,10 +10,11 @@ import {
   LogOut,
   MessageSquare,
   Plus,
+  Radio,
   Settings,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,7 @@ import {
 } from "@/components/social/SocialOverlay";
 import { ProfileBar } from "@/components/social/ProfileBar";
 import { useAutoAfk } from "@/hooks/use-auto-afk";
+import { cn } from "@/lib/utils";
 
 /**
  * ÖRDEX home — a Discord-style standalone shell. Room management, DMs, groups
@@ -40,6 +42,8 @@ import { useAutoAfk } from "@/hooks/use-auto-afk";
  * (full-width chat); closing it returns to the underlying home view.
  */
 type HomeTab = "rooms" | "messages" | "friends";
+/** Center panel scope: every public room vs. only the ones I belong to. */
+type RoomScope = "all" | "mine";
 
 const FRIENDS_VIEWS: { id: FriendsView; label: string }[] = [
   { id: "online", label: "Çevrimiçi" },
@@ -55,12 +59,12 @@ export default function Dashboard() {
   useAutoAfk();
   const [tab, setTab] = useState<HomeTab>("rooms");
   const [friendsView, setFriendsView] = useState<FriendsView>("all");
+  const [roomScope, setRoomScope] = useState<RoomScope>("all");
   const [code, setCode] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const myRooms = useQuery(api.rooms.listMyRooms, {}) ?? [];
-  const publicRooms = useQuery(api.rooms.listPublicRooms, {}) ?? [];
   const joinRoom = useMutation(api.rooms.joinRoom);
   const badges = useUnreadBadges();
   // Reactive mirror of the full-screen DM/group stage (null = no chat open).
@@ -201,9 +205,8 @@ export default function Dashboard() {
         {/* List column: full width on phones (Discord mobile behavior),
             288px rail on sm+; hidden entirely while a chat is open. */}
         {!socialView && (
-          <aside className="ordex-panel flex w-full min-w-0 shrink-0 flex-col border-r border-white/5 sm:w-72">
-            {tab === "rooms" && (
-              <>
+          <aside className="ordex-panel flex w-full min-w-0 shrink-0 flex-col border-r border-white/5 sm:w-72">              {tab === "rooms" && (
+                <>
                 <div className="border-b border-white/5 p-3">
                   <div className="flex gap-2">
                     <Input
@@ -250,27 +253,19 @@ export default function Dashboard() {
                       />
                     ) : null,
                   )}
-                  <p className="px-2 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-[var(--ordex-muted)]">
+                  {/* Mobile-only discovery list: the center RoomsStage is hidden
+                      on phones (the sidebar IS the home view there), so public
+                      rooms must stay reachable. On desktop this is hidden — the
+                      center tabs own ALL room lists, nothing is duplicated. */}
+                  <p className="px-2 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-[var(--ordex-muted)] sm:hidden">
                     Herkese açık odalar
                   </p>
-                  {publicRooms
-                    .filter((r) => !myRooms.some((m) => m?._id === r._id))
-                    .slice(0, 12)
-                    .map((room) => (
-                      <RoomLink
-                        key={room._id}
-                        code={room.code}
-                        name={room.name}
-                      />
-                    ))}
-                  {publicRooms.length === 0 && (
-                    <p className="px-2 py-1 text-xs text-[var(--ordex-muted)]">
-                      Keşfedilecek oda yok.
-                    </p>
-                  )}
+                  <div className="sm:hidden">
+                    <MobilePublicRooms />
+                  </div>
                 </div>
-              </>
-            )}
+                </>
+              )}
 
             {tab === "messages" && (
               <div className="flex min-h-0 flex-1 flex-col">
@@ -328,10 +323,8 @@ export default function Dashboard() {
               {tab === "rooms" && (
                 <RoomsStage
                   onCreate={() => setCreateOpen(true)}
-                  onJoin={goJoin}
-                  code={code}
-                  setCode={setCode}
-                  joinDisabled={code.trim().length !== 6}
+                  scope={roomScope}
+                  onScopeChange={setRoomScope}
                 />
               )}
               {tab === "messages" && <MessagesEmptyState />}
@@ -347,113 +340,117 @@ export default function Dashboard() {
   );
 }
 
-/** Center content for the rooms tab (hidden while a full-screen DM is open). */
+/**
+ * Center content for the rooms tab (hidden while a full-screen DM is open).
+ * One consolidated panel: scope tabs (Tüm Odalar / Odalarım) + room cards in
+ * a grid with member/voice/live badges and a quick Katıl action. The sidebar
+ * owns the create/join ACTIONS; this panel owns every room LIST — nothing is
+ * duplicated between the two anymore.
+ */
 function RoomsStage({
   onCreate,
-  onJoin,
-  code,
-  setCode,
-  joinDisabled,
+  scope,
+  onScopeChange,
 }: {
   onCreate: () => void;
-  onJoin: () => void;
-  code: string;
-  setCode: (v: string) => void;
-  joinDisabled: boolean;
+  scope: RoomScope;
+  onScopeChange: (s: RoomScope) => void;
 }) {
-  const myRooms = useQuery(api.rooms.listMyRooms, {}) ?? [];
-  const publicRooms = useQuery(api.rooms.listPublicRooms, {}) ?? [];
+  const roomCards = useQuery(api.rooms.listRoomCards, {}) ?? [];
+  const scoped = useMemo(
+    () => (scope === "mine" ? roomCards.filter((r) => r.isMine) : roomCards),
+    [roomCards, scope],
+  );
+  const mineCount = roomCards.filter((r) => r.isMine).length;
+
+  const scopeBtn = (active: boolean) =>
+    `relative rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+      active
+        ? "bg-[var(--ordex-panel-3)] text-white"
+        : "text-[var(--ordex-muted)] hover:bg-[var(--ordex-panel-2)] hover:text-zinc-100"
+    }`;
+
   return (
     <div className="ordex-bg min-h-0 flex-1 overflow-y-auto p-6 [scrollbar-width:thin]">
-      <div className="mx-auto w-full max-w-3xl">
-        <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-          Birlikte izle, birlikte konuş.
-        </h1>
-        <p className="mt-1 text-sm text-[var(--ordex-muted)]">
-          Oda kur, kodla davet et, sesli kanala bağlan — video herkes için
-          senkron akar.
-        </p>
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div className="ordex-panel-2 rounded-xl border border-white/5 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <Plus className="size-4 text-[var(--ordex-accent)]" /> Yeni oda
-            </div>
-            <p className="mt-1 text-xs text-zinc-500">
-              Herkese açık ya da gizli (davet kodlu) oda oluştur.
+      <div className="mx-auto w-full max-w-4xl">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
+              Birlikte izle, birlikte konuş.
+            </h1>
+            <p className="mt-1 text-sm text-[var(--ordex-muted)]">
+              Odaları keşfet, katıl, sesli kanala bağlan — video herkes için senkron akar.
             </p>
-            <Button
-              onClick={onCreate}
-              className="mt-3 h-10 w-full gap-2 bg-[var(--ordex-accent)] text-white hover:bg-[var(--ordex-accent-hover)]"
-            >
-              Oda oluştur
-            </Button>
           </div>
-
-          <div className="ordex-panel-2 rounded-xl border border-white/5 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-              <Users className="size-4 text-[var(--ordex-accent)]" /> Kodla
-              katıl
-            </div>
-            <Input
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === "Enter" && onJoin()}
-              placeholder="6 haneli oda kodu"
-              maxLength={6}
-              className="ordex-inset mt-3 h-10 border-white/10 font-mono text-sm uppercase tracking-[0.3em] placeholder:font-sans placeholder:tracking-normal placeholder:text-zinc-500 focus-visible:ring-[var(--ordex-accent)]/40"
-            />
-            <Button
-              onClick={onJoin}
-              disabled={joinDisabled}
-              variant="outline"
-              className="ordex-inset mt-3 h-10 w-full gap-2 border-white/10 text-sm hover:bg-[var(--ordex-panel-3)]"
-            >
-              Odaya gir →
-            </Button>
-          </div>
+          <Button
+            onClick={onCreate}
+            className="h-9 shrink-0 gap-2 bg-[var(--ordex-accent)] text-sm text-white hover:bg-[var(--ordex-accent-hover)]"
+          >
+            <Plus className="size-4" /> Yeni oda
+          </Button>
         </div>
 
-        <section className="mt-8">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-            Odalarım
-          </h2>
-          {myRooms.length === 0 ? (
-            <p className="mt-2 text-sm text-zinc-600">
-              Henüz bir odaya katılmadın. Yukarıdan yeni bir oda kur.
-            </p>
-          ) : (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {myRooms.map(
-                (room) =>
-                  room && (
-                    <RoomCard
-                      key={room._id}
-                      code={room.code}
-                      name={room.name}
-                    />
-                  ),
+        {/* Scope tabs — the single place rooms are listed in the center. */}
+        <div className="ordex-panel-2 mt-5 inline-flex items-center gap-1 rounded-lg border border-white/5 p-1">
+          <button onClick={() => onScopeChange("all")} className={scopeBtn(scope === "all")}>
+            <span className="flex items-center gap-1.5">
+              <Globe2 className="size-3.5" /> Tüm Odalar
+            </span>
+          </button>
+          <button onClick={() => onScopeChange("mine")} className={scopeBtn(scope === "mine")}>
+            <span className="flex items-center gap-1.5">
+              <Hash className="size-3.5" /> Odalarım
+              {mineCount > 0 && (
+                <span className="rounded-full bg-[var(--ordex-accent-soft)] px-1.5 text-[10px] font-bold text-[var(--ordex-accent)]">
+                  {mineCount}
+                </span>
               )}
-            </div>
-          )}
-        </section>
+            </span>
+          </button>
+        </div>
 
-        <section className="mt-8 pb-10">
-          <h2 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-            <Globe2 className="size-3.5" /> Herkese açık odalar
-          </h2>
-          {publicRooms.length === 0 ? (
-            <p className="mt-2 text-sm text-zinc-600">Keşfedilecek oda yok.</p>
-          ) : (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {publicRooms.slice(0, 12).map((room) => (
-                <RoomCard key={room._id} code={room.code} name={room.name} />
-              ))}
-            </div>
-          )}
-        </section>
+        {scoped.length === 0 ? (
+          <div className="ordex-panel-2 mt-6 flex flex-col items-center gap-2 rounded-xl border border-white/5 p-10 text-center">
+            <span className="flex size-12 items-center justify-center rounded-2xl bg-white/5 text-[var(--ordex-muted)]">
+              <Hash className="size-5" />
+            </span>
+            <p className="text-sm font-semibold text-zinc-200">
+              {scope === "mine" ? "Henüz bir odaya katılmadın" : "Keşfedilecek oda yok"}
+            </p>
+            <p className="max-w-xs text-xs text-[var(--ordex-muted)]">
+              {scope === "mine"
+                ? "Soldaki kutuya bir oda kodu girerek katıl veya yeni bir oda oluştur."
+                : "Soldan bir oda oluştur — odaların burada herkese görünür."}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 pb-10 sm:grid-cols-2 lg:grid-cols-3">
+            {scoped.map((room) => (
+              <RoomCard key={String(room._id)} card={room} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+/** Mobile-only public room list (desktop shows it in the center grid). */
+function MobilePublicRooms() {
+  const publicRooms = useQuery(api.rooms.listPublicRooms, {}) ?? [];
+  const myRooms = useQuery(api.rooms.listMyRooms, {}) ?? [];
+  const visible = publicRooms
+    .filter((r) => !myRooms.some((m) => m?._id === r._id))
+    .slice(0, 12);
+  if (visible.length === 0) {
+    return <p className="px-2 py-1 text-xs text-[var(--ordex-muted)]">Keşfedilecek oda yok.</p>;
+  }
+  return (
+    <>
+      {visible.map((room) => (
+        <RoomLink key={room._id} code={room.code} name={room.name} />
+      ))}
+    </>
   );
 }
 
@@ -494,26 +491,98 @@ function FriendsEmptyState({ view }: { view: FriendsView }) {
   );
 }
 
-function RoomCard({ code, name }: { code: string; name: string }) {
+type RoomCardData = {
+  _id: string;
+  code: string;
+  name: string;
+  createdBy: string;
+  createdAt: number;
+  isMine: boolean;
+  memberCount: number;
+  onlineCount: number;
+  voiceCount: number;
+  isLive: boolean;
+  isPlaying: boolean;
+};
+
+/** Modern dark room card: member count, voice/live badges, quick Katıl. */
+function RoomCard({ card }: { card: RoomCardData }) {
   const navigate = useNavigate();
   return (
     <button
-      onClick={() => navigate(`/room/${code}`)}
-      className="ordex-panel-2 group rounded-xl border border-white/5 p-4 text-left transition-colors hover:border-[var(--ordex-accent)]/40 hover:bg-[var(--ordex-panel-3)]"
+      onClick={() => navigate(`/room/${card.code}`)}
+      className="ordex-panel-2 group relative overflow-hidden rounded-xl border border-white/5 p-4 text-left transition-colors hover:border-[var(--ordex-accent)]/40 hover:bg-[var(--ordex-panel-3)]"
     >
-      <div className="flex items-center gap-2">
-        <span className="flex size-8 items-center justify-center rounded-md bg-white/5 text-zinc-300">
+      {/* Live / playing glow strip */}
+      {(card.isLive || card.isPlaying) && (
+        <span
+          className="absolute inset-x-0 top-0 h-0.5 bg-[var(--ordex-accent)]"
+          aria-hidden="true"
+        />
+      )}
+      <div className="flex items-start gap-2.5">
+        <span
+          className={cn(
+            "flex size-9 shrink-0 items-center justify-center rounded-lg",
+            card.isLive || card.isPlaying
+              ? "bg-[var(--ordex-accent)]/15 text-[var(--ordex-accent)]"
+              : "bg-white/5 text-zinc-300",
+          )}
+        >
           <Hash className="size-4" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
-          {name}
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
+              {card.name}
+            </span>
+            {card.isMine && (
+              <span
+                className="ordex-chip shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                title="Bu odaya üyesin"
+              >
+                Üyesin
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] text-zinc-500">
+            {card.createdBy} kurdu
+          </span>
         </span>
       </div>
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {card.isLive && (
+          <span className="flex items-center gap-1 rounded-full bg-[var(--ordex-accent)]/15 px-2 py-0.5 text-[10px] font-semibold text-[var(--ordex-accent)]">
+            <Radio className="size-2.5" /> Yayın
+          </span>
+        )}
+        {!card.isLive && card.isPlaying && (
+          <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+            <Radio className="size-2.5" /> Video sürüyor
+          </span>
+        )}
+        {card.voiceCount > 0 && (
+          <span className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
+            <Users className="size-2.5" /> {card.voiceCount} sesli
+          </span>
+        )}
+        {card.onlineCount > 0 && (
+          <span className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
+            <span className="size-1.5 rounded-full bg-emerald-500" />
+            {card.onlineCount} çevrimiçi
+          </span>
+        )}
+        {card.memberCount === 0 && (
+          <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">
+            Boş oda
+          </span>
+        )}
+      </div>
+      <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2.5">
         <span className="ordex-chip rounded px-2 py-0.5 font-mono text-[11px] tracking-widest">
-          {code}
+          {card.code}
         </span>
-        <span className="text-xs text-zinc-500 transition-colors group-hover:text-[var(--ordex-accent)]">
+        <span className="text-xs font-semibold text-zinc-500 transition-colors group-hover:text-[var(--ordex-accent)]">
           Katıl →
         </span>
       </div>
