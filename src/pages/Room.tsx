@@ -139,7 +139,9 @@ function RoomView({
   // 😴 Global auto-AFK watcher (5 dk hareketsizlik → Boşta 🌙).
   useAutoAfk();
   // Voice UI state mirrored up so presence heartbeats reflect it.
-  const [voiceUi, setVoiceUi] = useState({ inVoice: false, micOn: true, camOn: true, isSharing: false });
+  // camOn starts false: broadcasting camOn=true before any camera is opened
+  // made everyone else see a "camera on" icon for this user.
+  const [voiceUi, setVoiceUi] = useState({ inVoice: false, micOn: true, camOn: false, isSharing: false });
 
   /** Leave: kill voice/WebRTC, clear presence, then head back to the home page. */
   const leaveRoom = useCallback(() => {
@@ -287,6 +289,28 @@ function RoomView({
     </div>
   );
 
+  // ⚠️ Hooks order fix: these refs + effect MUST run on every render, i.e.
+  // BEFORE the kicked/roomClosed early returns below. Previously they sat
+  // after the returns, so flipping kicked/roomClosed changed the hook count
+  // and React crashed with "Rendered more hooks than during the previous
+  // render" — the whole room fell to the error boundary.
+  // Cinema mode collapses both side panels to zero (the stage itself stays
+  // mounted — unmounting it would kill the YouTube player lifecycle).
+  const leftPanelRef = useRef<ImperativePanelHandle | null>(null);
+  const rightPanelRef = useRef<ImperativePanelHandle | null>(null);
+  useEffect(() => {
+    if (isMobile) return;
+    if (cinema) {
+      leftPanelRef.current?.collapse();
+      rightPanelRef.current?.collapse();
+    } else {
+      // Restore only panels that are actually collapsed, so a user-chosen
+      // manual size is never snapped back.
+      if ((leftPanelRef.current?.getSize() ?? 16) < 1) leftPanelRef.current?.resize(16);
+      if ((rightPanelRef.current?.getSize() ?? 25) < 1) rightPanelRef.current?.resize(25);
+    }
+  }, [cinema, isMobile]);
+
   // 🚪 The owner removed this user — show a dedicated kicked screen.
   if (kicked) {
     return (
@@ -334,23 +358,6 @@ function RoomView({
       </main>
     );
   }
-
-  // Cinema mode collapses both side panels to zero (the stage itself stays
-  // mounted — unmounting it would kill the YouTube player lifecycle).
-  const leftPanelRef = useRef<ImperativePanelHandle | null>(null);
-  const rightPanelRef = useRef<ImperativePanelHandle | null>(null);
-  useEffect(() => {
-    if (isMobile) return;
-    if (cinema) {
-      leftPanelRef.current?.collapse();
-      rightPanelRef.current?.collapse();
-    } else {
-      // Restore only panels that are actually collapsed, so a user-chosen
-      // manual size is never snapped back.
-      if ((leftPanelRef.current?.getSize() ?? 16) < 1) leftPanelRef.current?.resize(16);
-      if ((rightPanelRef.current?.getSize() ?? 25) < 1) rightPanelRef.current?.resize(25);
-    }
-  }, [cinema, isMobile]);
 
   const stage =
     roomType === "gaming" ? (

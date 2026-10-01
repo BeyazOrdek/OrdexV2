@@ -10,9 +10,21 @@ import { getSessionId } from "@/lib/utils-room";
 // Same battle-tested pattern as useVoice (perfect negotiation, candidate
 // queue, ICE restart watchdog) but peer-to-peer between exactly two users.
 
+// Same ICE policy as use-voice.ts: STUN for speed + free Open Relay TURN
+// fallback so 1:1 calls connect behind symmetric NAT / mobile networks too.
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:80?transport=tcp",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
 ];
 
 export type CallState = "idle" | "outgoing-ringing" | "active";

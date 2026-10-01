@@ -13,9 +13,23 @@ import {
   type VoiceMode,
 } from "@/lib/prefs";
 
+// STUN only reveals public IPs — it cannot punch through symmetric NAT.
+// Open Relay (metered.ca) adds free TURN relays so voice also connects on
+// mobile data and strict campus/corporate networks, where a STUN-only mesh
+// silently fails (the classic "sesli konuşma çalışmıyor" bug).
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:80?transport=tcp",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
 ];
 
 /** Krisp-style mic chain honoring the per-toggle settings (Ses & Görüntü). */

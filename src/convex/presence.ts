@@ -25,9 +25,6 @@ export const heartbeat = mutation({
     // 🚪 Kicked users cannot keep heartbeating — Room.tsx reacts to this
     // error by swapping the whole view for the "Odadan atıldın" screen.
     await assertNotKicked(ctx, args.roomId, userId);
-    // 🚪 Kicked users cannot keep heartbeating — Room.tsx reacts to this
-    // error by swapping the whole view for the "Odadan atıldın" screen.
-    await assertNotKicked(ctx, args.roomId, userId);
     const existing = await ctx.db
       .query("presence")
       .withIndex("by_session", (q) => q.eq("sessionId", args.sessionId))
